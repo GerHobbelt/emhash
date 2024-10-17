@@ -334,7 +334,7 @@ static uint64_t rnd(uint64_t n) {
     return c * xorshift(p * xorshift(n, 32), 32);
 }
 
-int main()
+int main(void)
 {
     ELEMENTS = new uint64_t[MAX_ELEMENTS];
 

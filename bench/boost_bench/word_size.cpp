@@ -222,7 +222,7 @@ template<class K, class V> using absl_flat_hash_map =
 
 #endif
 
-int main()
+int main(void)
 {
     init_words();
 

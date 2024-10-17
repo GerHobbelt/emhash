@@ -165,7 +165,7 @@ auto apply_helper(Functor&& functor, Tuple&& t, index_sequence<Indexes...>)
 //   void user_function2(std::unique_ptr<Foo>);
 //   auto user_lambda = [](int, int) {};
 //
-//   int main()
+//   int main(void)
 //   {
 //       std::tuple<int, std::string> tuple1(42, "bar");
 //       // Invokes the first user function on int, std::string.

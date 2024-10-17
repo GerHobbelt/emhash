@@ -397,7 +397,7 @@ template<class K, class V> using tsl_robin_pg_map_fnv1a =
 
 //
 
-int main()
+int main(void)
 {
     init_indices();
 

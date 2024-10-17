@@ -339,7 +339,7 @@ template<class K, class V> using absl_flat_hash_map_fnv1a =
 
 //
 
-int main()
+int main(void)
 {
     init_words();
 
