@@ -42,7 +42,10 @@ namespace emilib2 {
         SENTINEL = 127,
     };
 
+    constexpr static uint8_t MAPBITS = 253;
     constexpr static uint8_t EMPTY_OFFSET = 0;
+    constexpr static uint8_t MXLOAD_FACTOR = 6; // max_load = MXLOAD_FACTOR/(MXLOAD_FACTOR + 1)
+
 #if EMH_OFFSET_STEP == 0
     constexpr static uint8_t OFFSET_STEP  = 4;
 #endif
@@ -54,6 +57,7 @@ namespace emilib2 {
     constexpr static uint8_t simd_bytes = sizeof(simd_empty) / sizeof(uint8_t);
 
     #define SET1_EPI8      _mm_set1_epi8
+    #define SET1_EPI32     _mm_set1_epi32
     #define LOAD_UEPI8     _mm_loadu_si128
     #define MOVEMASK_EPI8  _mm_movemask_epi8
     #define CMPEQ_EPI8     _mm_cmpeq_epi8
@@ -65,6 +69,7 @@ namespace emilib2 {
     constexpr static uint8_t simd_bytes = sizeof(simd_empty) / sizeof(uint8_t);
 
     #define SET1_EPI8      _mm256_set1_epi8
+    #define SET1_EPI32     _mm256_set1_epi32
     #define LOAD_UEPI8     _mm256_loadu_si256
     #define MOVEMASK_EPI8  _mm256_movemask_epi8
     #define CMPEQ_EPI8     _mm256_cmpeq_epi8
@@ -83,7 +88,7 @@ namespace emilib2 {
     #define CMPGT_EPI8     _mm512_cmpgt_epi8
 #endif
 
-#if EMH_SSE2_ITERATOR == 0 || AVX2_EHASH   //use avx2 to find filled bucket to accerate iterator
+#if EMH_AVX_ITERATOR == 1 || AVX2_EHASH   //use avx2 to find filled bucket to accerate iterator
     #define EMH_ITERATOR_BITS 32
     const static auto simd2_delete = _mm256_set1_epi8(EDELETE);
     const static auto simd2_filled = _mm256_set1_epi8(EFILLED);
@@ -130,7 +135,7 @@ class HashMap
 private:
     using htype = HashMap<KeyT, ValueT, HashT, EqT>;
 
-    using PairT = std::pair<KeyT, ValueT>;
+    using PairT = std::pair<const KeyT, ValueT>;
 
 public:
     using size_t          = uint32_t;
@@ -148,17 +153,17 @@ public:
     inline int8_t hash_key2(size_t& main_bucket, const UType& key) const
     {
         const auto key_hash = _hasher(key);
-        main_bucket = size_t(key_hash & _mask);
-        return (int8_t)((size_t)(key_hash % 253) + EFILLED);
+        main_bucket = size_t(key_hash) & _mask;
+        return (int8_t)((size_t)(key_hash % MAPBITS) + EFILLED);
     }
 
     template<typename UType, typename std::enable_if<std::is_integral<UType>::value, int8_t>::type = 0>
     inline int8_t hash_key2(size_t& main_bucket, const UType& key) const
     {
         const auto key_hash = _hasher(key);
-        main_bucket = size_t(key_hash & _mask);
+        main_bucket = size_t(key_hash) & _mask;
 //        return (int8_t)((key * 0x9FB21C651E98DF25ull % 251) - 125);
-        return (int8_t)((size_t)(key_hash % 253) + EFILLED);
+        return (int8_t)((size_t)(key_hash % MAPBITS) + EFILLED);
     }
 
     class const_iterator;
@@ -167,18 +172,19 @@ public:
     public:
         using iterator_category = std::forward_iterator_tag;
         using difference_type   = std::ptrdiff_t;
-        using value_type        = std::pair<KeyT, ValueT>;
+        using value_type        = PairT;
         using pointer           = value_type*;
         using reference         = value_type&;
 
         iterator() {}
         iterator(const const_iterator& it)
             : _map(it._map), _bucket(it._bucket), _bmask(it._bmask), _from(it._from) {}
-        iterator(const htype* hash_map, size_t bucket) : _map(hash_map), _bucket(bucket) { init(); }
+        //iterator(const htype* hash_map, size_t bucket) : _map(hash_map), _bucket(bucket) { init(); }
+
 #if EMH_ITER_SAFE
-        iterator(const htype* hash_map, size_t bucket, bool) : _map(hash_map), _bucket(bucket) { init(); }
+        iterator(const htype* hash_map, size_t bucket) : _map(hash_map), _bucket(bucket) { init(); }
 #else
-        iterator(const htype* hash_map, size_t bucket, bool) : _map(hash_map), _bucket(bucket) { _bmask = 0; _from = size_t(- 1); }
+        iterator(const htype* hash_map, size_t bucket) : _map(hash_map), _bucket(bucket) { _bmask = 0; _from = size_t(- 1); }
 #endif
 
         void init()
@@ -258,7 +264,7 @@ public:
     public:
         using iterator_category = std::forward_iterator_tag;
         using difference_type   = std::ptrdiff_t;
-        using value_type        = const std::pair<KeyT, ValueT>;
+        using value_type        = const PairT;
         using pointer           = value_type*;
         using reference         = value_type&;
 
@@ -437,15 +443,11 @@ public:
 
     iterator begin() noexcept
     {
-        if (_num_filled == 0)
-            return {this, _num_buckets, false};
-        return {this, find_first_slot(0), false};
+        return {this, find_first_slot(0)};
     }
 
     const_iterator cbegin() const noexcept
     {
-        if (_num_filled == 0)
-            return {this, _num_buckets};
         return {this, find_first_slot(0)};
     }
 
@@ -456,7 +458,7 @@ public:
 
     iterator end() noexcept
     {
-        return {this, _num_buckets, false};
+        return {this, _num_buckets};
     }
 
     const_iterator cend() const noexcept
@@ -502,7 +504,7 @@ public:
     template<typename K>
     iterator find(const K& key) noexcept
     {
-        return {this, find_filled_bucket(key), false};
+        return {this, find_filled_bucket(key)};
     }
 
     template<typename K>
@@ -602,7 +604,7 @@ public:
         if (bempty) {
             new(_pairs + bucket) PairT(std::forward<K>(key), std::forward<V>(val)); _num_filled++;
         }
-        return { {this, bucket, false}, bempty };
+        return { {this, bucket}, bempty };
     }
 
     std::pair<iterator, bool> do_insert(const value_type& value) noexcept
@@ -612,7 +614,7 @@ public:
         if (bempty) {
             new(_pairs + bucket) PairT(value); _num_filled++;
         }
-        return { {this, bucket, false}, bempty };
+        return { {this, bucket}, bempty };
     }
 
     std::pair<iterator, bool> do_insert(value_type&& value) noexcept
@@ -622,7 +624,7 @@ public:
         if (bempty) {
             new(_pairs + bucket) PairT(std::move(value)); _num_filled++;
         }
-        return { {this, bucket, false}, bempty };
+        return { {this, bucket}, bempty };
     }
 
     template <class... Args>
@@ -710,7 +712,7 @@ public:
             _pairs[bucket].second = std::forward<V>(val);
         }
 
-        return { {this, bucket, false}, bempty };
+        return { {this, bucket}, bempty };
     }
 
     bool set_get(const KeyT& key, const ValueT& val, ValueT& oldv)
@@ -870,7 +872,7 @@ public:
 
     bool reserve(size_t num_elems) noexcept
     {
-        size_t required_buckets = num_elems + num_elems / 6;
+        size_t required_buckets = num_elems + num_elems / MXLOAD_FACTOR;
         if (EMH_LIKELY(required_buckets < _num_buckets))
             return false;
 
@@ -977,7 +979,7 @@ private:
         // Prefetch the heap-allocated memory region to resolve potential TLB
         // misses.  This is intended to overlap with execution of calculating the hash for a key.
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
-        _mm_prefetch((const char*)ctrl, _MM_HINT_T0);
+        _mm_prefetch((const char*)ctrl, _MM_HINT_T1);
 #elif defined(__GNUC__)
         __builtin_prefetch(static_cast<const void*>(ctrl));
 #endif
@@ -1009,8 +1011,7 @@ private:
     inline size_t get_next_bucket(size_t next_bucket, size_t offset) const
     {
 #if EMH_PSL_LINEAR == 0
-        next_bucket += offset < 6 ? simd_bytes * offset + 5 : _num_buckets / 15 + 1;
-        //next_bucket += simd_bytes * offset + 1;
+      next_bucket += offset < 5 ? (simd_bytes + 1) * offset: _num_buckets / 8 + 5;
 #elif EMH_PSL_LINEAR == 1
         if (offset < 8)
             next_bucket += simd_bytes * 2 + offset;
@@ -1034,7 +1035,10 @@ private:
     size_t find_filled_bucket(const K& key) const noexcept
     {
         size_t main_bucket;
-        const auto filled = SET1_EPI8(hash_key2(main_bucket, key));
+        const auto key_h2 = hash_key2(main_bucket, key);
+        //const auto filled = SET1_EPI8(key_h2);
+        const auto filled = SET1_EPI32(0x01010101u * (uint8_t)key_h2);
+
         auto next_bucket = main_bucket;
         size_t offset = 0;
 
@@ -1090,12 +1094,18 @@ private:
     template<typename K>
     size_t find_or_allocate(const K& key, bool& bnew) noexcept
     {
-        reserve(_num_filled);
+        size_t required_buckets = _num_filled + _num_filled / MXLOAD_FACTOR;
+        if (EMH_UNLIKELY(required_buckets >= _num_buckets))
+            rehash(required_buckets + 2);
 
         size_t main_bucket;
         const auto key_h2 = hash_key2(main_bucket, key);
+
         prefetch_heap_block((char*)&_pairs[main_bucket]);
-        const auto filled = SET1_EPI8(key_h2);
+        //const auto filled = SET1_EPI8(key_h2);
+        const auto filled = SET1_EPI32(0x01010101u * (uint8_t)key_h2);
+        //int k = (i % 256) * 0x01010101 __m128i vi = _mm_set1_epi32(k);
+
         auto next_bucket = main_bucket, offset = 0u;
         constexpr size_t chole = (size_t)-1;
         size_t hole = chole;
@@ -1222,6 +1232,8 @@ private:
 
     size_t find_first_slot(size_t next_bucket) const noexcept
     {
+//        if (EMH_UNLIKELY(_num_filled == 0)) return _num_buckets;
+
         while (true) {
             const auto maske = filled_mask(next_bucket);
             if (maske != 0)
