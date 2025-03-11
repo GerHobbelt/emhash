@@ -373,15 +373,15 @@ static void bench_InsertEraseBegin()
         MRNG rng(987654321 + i * i * i);
 
         // benchmark randomly inserting & erasing begin
-        for (size_t i = 0; i < max_n / 5; ++i)
+        for (size_t j = 0; j < max_n / 5; ++j)
             map.emplace((int64_t)rng(), 0);
 
-        for (size_t i = 0; i < max_n; ++i) {
+        for (size_t j = 0; j < max_n; ++j) {
             map.erase(map.begin());
             map.emplace((int64_t)rng(), 0);
         }
 
-        printf("\n        %.2lf cycles lf = %.2lf mapsize = %d time %.2f", (max_n / 1000000.0), map.load_factor(), (int)map.size(), now2sec() - starts);
+        printf("\n        %.2lf cycles lf = %.2f mapsize = %d time %.2lf", ((double)max_n / 1000000.0), map.load_factor(), (int)map.size(), now2sec() - starts);
         max_n *= 5;
     }
 
@@ -406,11 +406,11 @@ static void bench_InsertEraseContinue()
         MRNG rng(2345 + i * i * i);
 
         // benchmark randomly inserting & erasing begin
-        for (size_t i = 0; i < max_n / 3; ++i)
+        for (size_t j = 0; j < max_n / 3; ++j)
             map.emplace((int)rng(), 0);
 
         auto key = map.begin()->first;
-        for (size_t i = max_n; i > 0; i--) {
+        for (size_t j = max_n; j > 0; j--) {
             auto it = map.find(key);
             if (it == map.end()) {
                 it = map.begin();
@@ -428,7 +428,7 @@ static void bench_InsertEraseContinue()
             map.emplace((int)rng(), 0);
         }
 
-        printf("\n        %.2lf cycles lf = %.2lf mapsize = %d time %.2f", (max_n / 1000000.0), map.load_factor(), (int)map.size(), now2sec() - starts);
+        printf("\n        %.2lf cycles lf = %.2f mapsize = %d time %.2lf", ((double)max_n / 1000000.0), map.load_factor(), (int)map.size(), now2sec() - starts);
         max_n *= 7;
     }
 
@@ -540,7 +540,7 @@ static void bench_randomInsertErase(MAP& map)
             }
 
 //            auto ts = now2sec();
-            for (size_t i = 0; i < max_n; ++i) {
+            for (size_t j = 0; j < max_n; ++j) {
                 map2.emplace(rng() & bitMask, 0);
                 map2.erase(rng() & bitMask);
             }
@@ -617,7 +617,7 @@ static inline uint32_t udb_hash32(uint32_t key)
     x ^= x >> 27;
     x *= 0x94d049bb133111ebULL;
     x ^= x >> 31;
-    return x;
+    return (uint32_t)x;
 #endif
 }
 
@@ -626,7 +626,7 @@ static inline uint32_t udb_get_key(const uint32_t n, const uint32_t x)
 #if 0
     return udb_hash32(x % (n>>2));
 #else
-    return (uint32_t)(x % (n>>2)) * 0x45D9F3B;
+    return (uint32_t)((x % (n>>2)) * 0x45D9F3B);
 #endif
 }
 
@@ -665,7 +665,7 @@ static void bench_udb3()
     for (uint32_t j = 0, i = 0, n = n0; j < n_cp; ++j, n += step) {
         for (; i < n; ++i) {
             const uint64_t y = splitmix64(x);
-            const uint32_t key = udb_get_key(n, y);
+            const uint32_t key = udb_get_key(n, (uint32_t)y);
             if (is_del) {
                 auto p = h.emplace(key, i);
                 if (!p.second) h.erase(p.first);
@@ -806,7 +806,7 @@ static void bench_knucleotide() {
 
     std::vector<char> poly(n * 5);
     for (size_t i = 0; i < poly.size(); ++i) {
-        poly[i] = fasta_next();
+        poly[i] = (char)fasta_next();
     }
 
     auto nows = now2sec();
@@ -1032,7 +1032,7 @@ static size_t runInsertEraseString(size_t max_n, size_t string_length, uint32_t 
 
 //    auto ts = now2sec();
     for (size_t i = 0; i < max_n; ++i) {
-        *strData32 = rng() & bitMask;
+        *strData32 = uint32_t(rng() & bitMask);
 #if 0
         // create an entry.
         map[str] = 0;
@@ -1044,7 +1044,7 @@ static size_t runInsertEraseString(size_t max_n, size_t string_length, uint32_t 
         }
 #else
         map.emplace(str, 0);
-        *strData32 = rng() & bitMask;
+        *strData32 = uint32_t(rng() & bitMask);
         verifier += map.erase(str);
 #endif
     }
