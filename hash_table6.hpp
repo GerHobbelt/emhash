@@ -528,7 +528,7 @@ public:
             return *this;
         }
 
-        if (is_triviall_destructable())
+        if (!is_triviall_destructable())
             clearkv();
 
         if (_mask != rhs._mask) {
@@ -568,7 +568,7 @@ public:
 
     ~HashMap() noexcept
     {
-        if (is_triviall_destructable()) {
+        if (!is_triviall_destructable() && _num_filled) {
             for (auto it = cbegin(); _num_filled; ++it) {
                 _num_filled --;
                 it->~value_pair();
@@ -1175,9 +1175,9 @@ public:
     static constexpr bool is_triviall_destructable()
     {
 #if __cplusplus >= 201402L || _MSC_VER > 1600
-        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
+        return (std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #else
-        return !(std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
 #endif
     }
 
@@ -1200,7 +1200,7 @@ public:
     /// Remove all elements, keeping full capacity.
     void clear()
     {
-        if (is_triviall_destructable())
+        if (!is_triviall_destructable())
             clearkv();
         else if (_num_filled) {
             memset((char*)_bitmask, (int)0xFFFFFFFF, (_mask + 1) / 8);
@@ -1324,7 +1324,7 @@ public:
             if (bucket / 2 != hash_main(bucket / 2))
                 collision++;
 #endif
-            if (is_triviall_destructable())
+            if (!is_triviall_destructable())
                 old_pairs[src_bucket].~PairT();
         }
 
@@ -1379,7 +1379,7 @@ private:
     {
         EMH_CLS(bucket);
         _num_filled--;
-        if (is_triviall_destructable())
+        if (!is_triviall_destructable())
             _pairs[bucket].~PairT();
 
         EMH_ADDR(_pairs, bucket) = INACTIVE;
