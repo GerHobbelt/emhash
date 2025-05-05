@@ -42,7 +42,7 @@
     #include "wyhash.h"
 #endif
 
-#ifdef EMH_KEY
+#ifdef EMH_NEW
     #undef  EMH_KEY
     #undef  EMH_VAL
     #undef  EMH_PKV
@@ -51,15 +51,19 @@
     #undef  EMH_BUCKET
     #undef  EMH_EMPTY
     #undef  EMH_MASK
+    #undef  EMH_CLS	
 #endif
 
 // likely/unlikely
-#if (__GNUC__ >= 4 || __clang__)
-#    define EMH_LIKELY(condition)   __builtin_expect(condition, 1)
-#    define EMH_UNLIKELY(condition) __builtin_expect(condition, 0)
+#if defined(__GNUC__) && (__GNUC__ >= 3) && (__GNUC_MINOR__ >= 1) || defined(__clang__)
+    #define EMH_LIKELY(condition)   __builtin_expect(!!(condition), 1)
+    #define EMH_UNLIKELY(condition) __builtin_expect(!!(condition), 0)
+#elif defined(_MSC_VER) && (_MSC_VER >= 1920)
+    #define EMH_LIKELY(condition)   ((condition) ? ((void)__assume(condition), 1) : 0)
+    #define EMH_UNLIKELY(condition) ((condition) ? 1 : ((void)__assume(!condition), 0))
 #else
-#    define EMH_LIKELY(condition)   condition
-#    define EMH_UNLIKELY(condition) condition
+    #define EMH_LIKELY(condition)   (condition)
+    #define EMH_UNLIKELY(condition) (condition)
 #endif
 
 #ifndef EMH_BUCKET_INDEX
@@ -93,8 +97,8 @@
 #endif
 
 
-#define EMH_MASK(n)       uint8_t(1 << (n % MASK_BIT))
-#define EMH_SET(n)  _bitmask[n / MASK_BIT] &= ~(EMH_MASK(n))
+#define EMH_MASK(n)  (uint8_t)(1 << (n % MASK_BIT))
+#define EMH_SET(n)  _bitmask[n / MASK_BIT] &= (uint8_t)~(EMH_MASK(n))
 #define EMH_CLS(n)  _bitmask[n / MASK_BIT] |= EMH_MASK(n)
 
 #if _WIN32
@@ -1199,7 +1203,7 @@ public:
         if (is_triviall_destructable())
             clearkv();
         else if (_num_filled) {
-            memset((char*)_bitmask, 0xFFFFFFFF, (_mask + 1) / 8);
+            memset((char*)_bitmask, (int)0xFFFFFFFF, (_mask + 1) / 8);
             memset((char*)_pairs, -1, sizeof(_pairs[0]) * (_mask + 1));
 #if EMH_FIND_HIT
             if constexpr (std::is_integral<KeyT>::value)
@@ -1298,10 +1302,10 @@ public:
 
         /***************** init bitmask ---------------------- ***********/
         const auto mask_byte = (num_buckets + 7) / 8;
-        memset((char*)_bitmask, 0xFFFFFFFF, mask_byte);
+        memset((char*)_bitmask, (int)0xFFFFFFFF, mask_byte);
         memset((char*)_bitmask + mask_byte, 0, BIT_PACK);
         if (num_buckets < 8)
-            _bitmask[0] = (uint8_t)(1 << num_buckets) - 1;
+            _bitmask[0] = (uint8_t)((1 << num_buckets) - 1);
         //pack last position to bit 0
         /**************** -------------------------------- *************/
 
@@ -1493,7 +1497,7 @@ private:
         const auto main_bucket = hash_main(bucket);
         next_bucket /= 2;
         const auto prev_bucket = find_prev_bucket(main_bucket, bucket);
-        const auto odd_bucket = (prev_bucket == main_bucket ? 0 : 1);
+        const size_type odd_bucket = (prev_bucket == main_bucket ? 0 : 1);
         if (bucket == next_bucket)
             EMH_ADDR(_pairs, prev_bucket) = prev_bucket * 2 + odd_bucket;
         else

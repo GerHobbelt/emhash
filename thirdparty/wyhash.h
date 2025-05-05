@@ -154,10 +154,10 @@ static inline uint64_t wyhash64(uint64_t A, uint64_t B){ A^=0x2d358dccaa6c78a5ul
 static inline uint64_t wyrand(uint64_t *seed){ *seed+=0x2d358dccaa6c78a5ull; return _wymix(*seed,*seed^0x8bb84b93962eacc9ull);}
 
 //convert any 64 bit pseudo random numbers to uniform distribution [0,1). It can be combined with wyrand, wyhash64 or wyhash.
-static inline double wy2u01(uint64_t r){ const double _wynorm=1.0/(1ull<<52); return (r>>12)*_wynorm;}
+//static inline double wy2u01(uint64_t r){ const double _wynorm=1.0/(1ull<<52); return (double)(r >> 12) * _wynorm;}
 
 //convert any 64 bit pseudo random numbers to APPROXIMATE Gaussian distribution. It can be combined with wyrand, wyhash64 or wyhash.
-static inline double wy2gau(uint64_t r){ const double _wynorm=1.0/(1ull<<20); return ((r&0x1fffff)+((r>>21)&0x1fffff)+((r>>42)&0x1fffff))*_wynorm-3.0;}
+//static inline double wy2gau(uint64_t r){ const double _wynorm=1.0/(1ull<<20); return ((r&0x1fffff)+((r>>21)&0x1fffff)+((r>>42)&0x1fffff))*_wynorm-3.0;}
 
 #ifdef WYTRNG
 #include <sys/time.h>
@@ -205,7 +205,7 @@ static inline unsigned long long pow_mod(unsigned long long a, unsigned long lon
 }
 unsigned sprp(unsigned long long n, unsigned long long a) {
     unsigned long long d=n-1;
-    unsigned char s=0;
+    unsigned int s=0;
     while (!(d & 0xff)) { d>>=8; s+=8; }
     if (!(d & 0xf)) { d>>=4; s+=4; }
     if (!(d & 0x3)) { d>>=2; s+=2; }
