@@ -765,8 +765,8 @@ public:
     inline size_type bucket_count() const { return _num_buckets; }
     inline float load_factor() const { return ((float)_num_filled) / ((float)_mask + 1.0f); }
 
-    inline HashT& hash_function() const { return _hasher; }
-    inline EqT& key_eq() const { return _eq; }
+    inline const HashT& hash_function() const { return _hasher; }
+    inline const EqT& key_eq() const { return _eq; }
 
     inline void max_load_factor(float mlf)
     {
@@ -1378,7 +1378,7 @@ public:
         //if (sizeof(KeyT) < sizeof(size_type) && buckets > (1ul << (sizeof(uint16_t) * 8)))
         //    buckets = 2ul << (sizeof(KeyT) * 8);
 
-        assert(buckets < max_size() && buckets > _num_filled);
+        assert(buckets < (uint64_t)max_size() && buckets > (uint64_t)_num_filled);
         //TODO: throwOverflowError
 
         auto num_buckets = (size_type)buckets;

@@ -378,8 +378,8 @@ public:
     /// Returns average number of elements per bucket.
     float load_factor() const { return static_cast<float>(_num_filled) / (_mask + 1); }
 
-    HashT& hash_function() const { return _hasher; }
-    EqT& key_eq() const { return _eq; }
+    const HashT& hash_function() const { return _hasher; }
+    const EqT& key_eq() const { return _eq; }
 
     void max_load_factor(float mlf)
     {
@@ -913,7 +913,7 @@ public:
 
         uint32_t num_buckets = _num_filled > (1u << 16) ? (1u << 16) : 4u;
         while (num_buckets < required_buckets) { num_buckets *= 2; }
-        assert(num_buckets < max_size());
+        assert(num_buckets < (uint64_t)max_size());
 
 #if EMH_REHASH_LOG
         auto last = _last;

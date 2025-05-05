@@ -416,8 +416,8 @@ public:
     size_type bucket_count() const { return _num_buckets; }
     float load_factor() const { return static_cast<float>(_num_filled) / ((float)_mask + 1.0f); }
 
-    HashT& hash_function() const { return _hasher; }
-    EqT& key_eq() const { return _eq; }
+    const HashT& hash_function() const { return _hasher; }
+    const EqT& key_eq() const { return _eq; }
 
     void max_load_factor(float mlf)
     {
@@ -1173,7 +1173,7 @@ public:
         if (required_buckets < _num_filled)
             return;
 
-        assert(required_buckets < max_size());
+        assert(required_buckets < (uint64_t)max_size());
         auto num_buckets = _num_filled > (1u << 16) ? (1u << 16) : 4u;
         while (num_buckets < required_buckets) { num_buckets *= 2; }
 #if EMH_SAVE_MEM
