@@ -1,9 +1,11 @@
 #ifndef TTKey
-    #define TTKey              2
+    #define TTKey              1
 #endif
 #ifndef TTVal
-    #define TTVal              2
+    #define TTVal              0
 #endif
+
+#define  HAVE_INDIVI 1
 
 #include "util.h"
 
@@ -32,7 +34,8 @@ std::map<std::string, std::string> maps =
     {"boostf",  "boost_flat"},
 #endif
 #ifdef HAVE_INDIVI
-    {"indivi", "indivi_umap" },
+    {"indiviu", "indivi_umap" },
+    {"indiviw", "indivi_wmap" },
 #endif
 
     {"emhash5", "emhash5"},
@@ -82,7 +85,7 @@ std::map<std::string, std::string> maps =
 
 //rand data 3ype
 #ifndef RT
-    #define RT 1 //1 wyrand 2 Sfc4 3 RomuDuoJr 4 Lehmer64 5 mt19937_64
+    #define RT 3 //1 wyrand 2 Sfc4 3 RomuDuoJr 4 Lehmer64 5 mt19937_64
 #endif
 
 //#define CUCKOO_HASHMAP     1
@@ -121,6 +124,7 @@ std::map<std::string, std::string> maps =
 
 #ifdef HAVE_INDIVI
 # include "indivi/flat_umap.h"
+# include "indivi/flat_wmap.h"
 #endif
 
 #include "../hash_table6.hpp"
@@ -1462,7 +1466,8 @@ static int benchHashMap(int n)
         {  benOneHash<boost::unordered_flat_map<keyType, valueType, ehash_func>>("boostf", vList); }
 #endif
 #if HAVE_INDIVI
-        {  benOneHash<indivi::flat_umap<keyType, valueType, ehash_func>>("indivi", vList); }
+        {  benOneHash<indivi::flat_umap<keyType, valueType, ehash_func>>("indiviu", vList); }
+        {  benOneHash<indivi::flat_wmap<keyType, valueType, ehash_func>>("indiviw", vList); }
 #endif
 
         {  benOneHash<emhash5::HashMap <keyType, valueType, ehash_func>>("emhash5", vList); }
@@ -1597,7 +1602,7 @@ static void testHashInt(int loops = 500000009)
       sum += intHashCRC32(i + r);
     printf("intHashCRC32= %4d ms [%ld]\n\n", (int)(getus() - ts) / 1000, sum);
 
-#if 1
+#if 0
     constexpr int buff_size = 1024*1024;
     constexpr int pack_size = 64;
     auto buffer = new char[buff_size * pack_size];
