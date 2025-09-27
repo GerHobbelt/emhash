@@ -33,6 +33,11 @@
 #ifdef HAVE_BOOST
 #include <boost/unordered/unordered_flat_map.hpp>
 #endif
+//https://github.com/gaujay/indivi_collection
+#ifdef HAVE_INDIVI
+# include "indivi/flat_umap.h"
+#endif
+
 //    #define EMH_QUADRATIC 1
 //    #define EMH_STATIS 123456
 //    #define AVX2_EHASH 1
@@ -62,6 +67,8 @@
 #include "folly/container/F14Map.h"
 #endif
 
+
+
 static const uint64_t RND =(uint64_t)getus();
 static float max_lf = 0.875f;
 
@@ -78,6 +85,9 @@ static std::map<std::string_view, std::string_view> show_name =
 
 #if HAVE_BOOST
     {"boost",  "boost flat"},
+#endif
+#ifdef HAVE_INDIVI
+    {"indivi", "indivi_umap" },
 #endif
 #if CK_HMAP
     {"HashMapCell",  "ck_hashmap"},
@@ -1372,6 +1382,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { boost::unordered_flat_map<uint64_t, uint64_t, hash_func> hmap; bench_IterateIntegers(hmap); }
 #endif
+
+#if HAVE_INDIVI
+        { indivi::flat_umap<uint64_t, uint64_t, hash_func> hmap; bench_IterateIntegers(hmap); }
+#endif
+
 #if CK_HMAP
         { ck::HashMap<uint64_t, uint64_t, hash_func> hmap; bench_IterateIntegers(hmap); }
 #endif
@@ -1420,6 +1435,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { boost::unordered_flat_map<std::string, size_t, hash_func> bench; bench_randomFindString(bench); }
 #endif
+
+#if HAVE_INDIVI
+        { indivi::flat_umap<std::string, size_t, hash_func> bench; bench_randomFindString(bench); }
+#endif
+
 #if CK_HMAP //crash TODO
 //        { ck::HashMap<std::string, size_t, hash_func> bench; bench_randomFindString(bench); }
 #endif
@@ -1503,6 +1523,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { boost::unordered_flat_map<std::string, int, hash_func> bench; bench_randomEraseString(bench); }
 #endif
+
+#if HAVE_INDIVI
+        { indivi::flat_umap<std::string, int, hash_func> bench; bench_randomEraseString(bench); }
+#endif
+
 #if CK_HMAP //crash TODO
 //        { ck::HashMap<std::string, int, hash_func> bench; bench_randomEraseString(bench); }
 #endif
@@ -1557,6 +1582,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { boost::unordered_flat_map <uint64_t, int, hash_func> hmap; bench_copy(hmap); }
 #endif
+
+#if HAVE_INDIVI
+        { indivi::flat_umap <uint64_t, int, hash_func> hmap; bench_copy(hmap); }
+#endif
+
 #if CK_HMAP
 //        { ck::HashMap <uint64_t, int, hash_func> hmap; bench_copy(hmap); }
 #endif
@@ -1625,6 +1655,10 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
             { boost::unordered_flat_map <size_t, size_t, hash_func> hmap; bench_randomFind(hmap, numInserts[i], numFindsPerInsert[i]); }
 #endif
+#if HAVE_INDIVI
+            { indivi::flat_umap <size_t, size_t, hash_func> hmap; bench_randomFind(hmap, numInserts[i], numFindsPerInsert[i]); }
+#endif
+
 #if CK_HMAP
             { ck::HashMap <size_t, size_t, hash_func> hmap; bench_randomFind(hmap, numInserts[i], numFindsPerInsert[i]); }
 #endif
@@ -1689,6 +1723,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { boost::unordered_flat_map <int, int, hash_func> amap; bench_insert(amap); }
 #endif
+
+#if HAVE_INDIVI
+        { indivi::flat_umap <int, int, hash_func> amap; bench_insert(amap); }
+#endif
+
         { emilib2::HashMap<int, int, hash_func> emap; bench_insert(emap); }
         { emilib3::HashMap<int, int, hash_func> emap; bench_insert(emap); }
 
@@ -1728,6 +1767,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { boost::unordered_flat_map <uint64_t, int, hash_func> hmap; bench_randomInsertErase(hmap); }
 #endif
+
+#if HAVE_INDIVI
+        { indivi::flat_umap <uint64_t, int, hash_func> hmap; bench_randomInsertErase(hmap); }
+#endif
+
 #if CK_HMAP
         { ck::HashMap <uint64_t, int, hash_func> hmap; bench_randomInsertErase(hmap); }
 #endif
@@ -1820,6 +1864,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { boost::unordered_flat_map <int, int, hash_func> hmap; bench_randomDistinct2(hmap); }
 #endif
+
+#if HAVE_INDIVI
+        { indivi::flat_umap <int, int, hash_func> hmap; bench_randomDistinct2(hmap); }
+#endif
+
 #if CK_HMAP
         { ck::HashMap<int, int, hash_func> emap; bench_randomDistinct2(emap); }
 #endif
@@ -1861,6 +1910,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { bench_knucleotide<boost::unordered_flat_map <uint64_t, uint32_t, hash_func>>(); }
 #endif
+
+#if HAVE_INDIVI
+        { bench_knucleotide<indivi::flat_umap <uint64_t, uint32_t, hash_func>>(); }
+#endif
+
 #if ABSL_HMAP
         { bench_knucleotide<absl::flat_hash_map <uint64_t, uint32_t, hash_func>>(); }
 #endif
@@ -1928,6 +1982,9 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         { bench_GameOfLife<boost::unordered_flat_map <uint32_t, bool, hash_func>>(); }
 #endif
+#if HAVE_INDIVI
+        { bench_GameOfLife<indivi::flat_umap <uint32_t, bool, hash_func>>(); }
+#endif
 #if ABSL_HMAP
         { bench_GameOfLife<absl::flat_hash_map <uint32_t, bool, hash_func>>(); }
 #endif
@@ -1990,6 +2047,12 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         {  bench_AccidentallyQuadratic<boost::unordered_flat_map <int, int, hash_func>>(); }
 #endif
+
+#if HAVE_INDIVI
+        { bench_AccidentallyQuadratic<indivi::flat_umap <int, int, hash_func>>(); }
+#endif
+
+
 #if ABSL_HMAP
         {  bench_AccidentallyQuadratic<absl::flat_hash_map <int, int, hash_func>>(); }
 #endif
@@ -2048,6 +2111,9 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
 //        {  bench_InsertEraseContinue<boost::unordered_flat_map <int, int, hash_func>>(); }
 #endif
+#if HAVE_INDIVI
+//        { bench_InsertEraseContinue<indivi::flat_umap <int, int, hash_func>>(); }
+#endif
 #if ABSL_HMAP
         {  bench_InsertEraseContinue<absl::flat_hash_map <int, int, hash_func>>(); }
 #endif
@@ -2101,6 +2167,10 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         {  bench_InsertEraseBegin<boost::unordered_flat_map <int64_t, int, hash_func>>(); }
 #endif
+#if HAVE_INDIVI
+        { bench_InsertEraseBegin<indivi::flat_umap <int64_t, int, hash_func>>(); }
+#endif
+
 #if ABSL_HMAP
 //        {  bench_InsertEraseBegin<absl::flat_hash_map <int64_t, int, hash_func>>(); }
 #endif
@@ -2154,6 +2224,9 @@ static void runTest(int sflags, int eflags)
 #endif
 #if HAVE_BOOST
         {  bench_CreateInsert<boost::unordered_flat_map <int, int, hash_func>>(); }
+#endif
+#if HAVE_INDIVI
+        { bench_CreateInsert<indivi::flat_umap <int, int, hash_func>>(); }
 #endif
 #if ABSL_HMAP
         {  bench_CreateInsert<absl::flat_hash_map <int, int, hash_func>>(); }
@@ -2210,6 +2283,11 @@ static void runTest(int sflags, int eflags)
 #if HAVE_BOOST
         {  bench_udb3<boost::unordered_flat_map <uint32_t, uint32_t, hash_func>>(); }
 #endif
+#if HAVE_INDIVI
+        { bench_udb3<indivi::flat_umap <uint32_t, uint32_t, hash_func>>(); }
+#endif
+
+
 #if ABSL_HMAP
         {  bench_udb3<absl::flat_hash_map <uint32_t, uint32_t, hash_func>>(); }
 #endif
