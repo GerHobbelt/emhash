@@ -1,5 +1,5 @@
 // emhash8::HashMap for C++14/17/20
-// version 1.7.2
+// version 1.7.4
 // https://github.com/ktprime/emhash/blob/master/hash_table8.hpp
 //
 // Licensed under the MIT License <http://opensource.org/licenses/MIT>.
@@ -88,7 +88,7 @@ class HashMap
     constexpr static uint32_t EMH_CACHE_LINE_SIZE  = 64;
 
 public:
-    using htype = HashMap<KeyT, ValueT, HashT, EqT>;
+    using htype = HashMap<KeyT, ValueT, HashT, EqT, Allocator, Policy>; //TODO:Allocator is not implemented
     using value_type = std::pair<KeyT, ValueT>; //TODO set to const KeyT
     using key_type = const KeyT;
     using mapped_type = ValueT;
@@ -99,13 +99,13 @@ public:
 #elif EMH_SIZE_TYPE == 0
     using size_type = uint32_t;
 #else
-    using size_type = size_t;
+    using size_type = uint64_t;
 #endif
 
     using hasher = HashT;
     using key_equal = EqT;
 
-    constexpr static size_type INACTIVE = 0-1u;
+    constexpr static size_type INACTIVE = size_type(-1);
     constexpr static size_type EAD      = 2;
 
     struct Index
@@ -428,8 +428,8 @@ public:
     }
 
     constexpr float max_load_factor() const { return (1 << 27) / (float)_mlf; }
-    constexpr size_type max_size() const { return (1ull << (sizeof(size_type) * 8 - 1)); }
-    constexpr size_type max_bucket_count() const { return max_size(); }
+    constexpr uint64_t max_size() const { return 1ull << (sizeof(_num_buckets) * 8 - 1); }
+    constexpr uint64_t max_bucket_count() const { return max_size(); }
 
 #if EMH_STATIS
     //Returns the bucket number where the element with key k is located.
@@ -1070,7 +1070,7 @@ public:
         if (EMH_LIKELY(required_buckets < _mask)) // && !force
             return false;
 
-#elif EMH_HIGH_LOAD
+#else
         const auto required_buckets = num_elems + num_elems * 1 / 9;
         if (EMH_LIKELY(required_buckets < _mask))
             return false;
@@ -1108,7 +1108,7 @@ public:
 
     static Index* alloc_index(size_type num_buckets)
     {
-        auto new_index = (char*)malloc((uint64_t)(EAD + num_buckets) * sizeof(Index));
+        auto new_index = (char*)malloc((EAD + (uint64_t)num_buckets) * sizeof(Index));
         return (Index *)(new_index);
     }
 
@@ -1174,13 +1174,17 @@ public:
         if (required_buckets < _num_filled)
             return;
 
-        assert(required_buckets < (uint64_t)max_size());
-        auto num_buckets = _num_filled > (1u << 16) ? (1u << 16) : 4u;
-        while (num_buckets < required_buckets) { num_buckets *= 2; }
+        uint64_t buckets = _num_filled > (1u << 16) ? (1u << 16) : 4u;
+        while (buckets < required_buckets) { buckets *= 2; }
+        if (buckets > (uint64_t)max_size() || buckets < _num_filled)
+            std::abort(); //throw std::length_error("too large size");
+
 #if EMH_SAVE_MEM
-        if (sizeof(KeyT) < sizeof(size_type) && num_buckets >= (1ul << (2 * 8)))
-            num_buckets = 2ul << (sizeof(KeyT) * 8);
+        if (sizeof(KeyT) < sizeof(size_type) && buckets >= (1ul << (2 * 8)))
+            buckets = 2ul << (sizeof(KeyT) * 8);
 #endif
+
+        auto num_buckets = (size_type)buckets;
 
 #if EMH_REHASH_LOG
         auto last = _last;

@@ -42,7 +42,9 @@ namespace emilib {
 
 enum State : int8_t
 {
-    EFILLED  = -126, EDELETE = -127, EEMPTY = -128,
+    EFILLED  = -126,
+    EDELETE = -127,
+    EEMPTY = -128,
     SENTINEL = 127,
     STATE_BITS  = 1,
 };
@@ -90,14 +92,7 @@ inline static uint32_t CTZ(uint32_t n)
 
 #if _WIN32
     unsigned long index;
-    #if defined(_WIN64)
-        _BitScanForward64(&index, n);
-    #else
-    if ((uint32_t)n)
-        _BitScanForward(&index, (uint32_t)n);
-    else
-        {_BitScanForward(&index, (uint32_t)(n >> 32)); index += 32; }
-    #endif
+    _BitScanForward(&index, n);
 #elif 1
     auto index = __builtin_ctzl((unsigned long)n);
 #endif
@@ -113,6 +108,7 @@ private:
     using htype = HashMap<KeyT, ValueT, HashT, EqT>;
 
     using PairT = std::pair<const KeyT, ValueT>;
+    constexpr static uint8_t MXLOAD_FACTOR = 5; // max_load = LOAD_FACTOR / (LOAD_FACTOR + 1)
 
 public:
     using size_t          = uint32_t;
@@ -335,7 +331,7 @@ public:
 
     HashMap(std::initializer_list<value_type> il) noexcept
     {
-        reserve((size_t)il.size());
+        rehash((size_t)il.size());
         for (auto it = il.begin(); it != il.end(); ++it)
             insert(*it);
     }
@@ -343,7 +339,7 @@ public:
     template<class InputIt>
     HashMap(InputIt first, InputIt last, size_t bucket_count = 4) noexcept
     {
-        reserve(std::distance(first, last) + bucket_count);
+        rehash((size_t)std::distance(first, last) + bucket_count);
         for (; first != last; ++first)
             insert(*first);
     }
@@ -471,6 +467,9 @@ public:
         return 7.0f / 8;
     }
 
+    constexpr uint64_t max_size() const { return 1ull << (sizeof(_num_buckets) * 8 - 1); }
+    constexpr uint64_t max_bucket_count() const { return max_size(); }
+
     // ------------------------------------------------------------
 
     template<typename K=KeyT>
@@ -497,14 +496,14 @@ public:
         return find_filled_bucket(key) != _num_buckets;
     }
 
-    template<typename K = KeyT>
+    template<typename K=KeyT>
     ValueT& at(const K& key)
     {
         const auto bucket = find_filled_bucket(key);
         return _pairs[bucket].second;
     }
 
-    template<typename K = KeyT>
+    template<typename K=KeyT>
     const ValueT& at(const K& key) const
     {
         const auto bucket = find_filled_bucket(key);
@@ -630,7 +629,7 @@ public:
     template <typename Iter>
     void insert(Iter beginc, Iter endc)
     {
-        reserve(endc - beginc + _num_filled);
+        rehash(size_t(endc - beginc) + _num_filled);
         for (; beginc != endc; ++beginc)
             do_insert(beginc->first, beginc->second);
     }
@@ -651,7 +650,7 @@ public:
 
     void insert(std::initializer_list<value_type> ilist) noexcept
     {
-        reserve(ilist.size() + _num_filled);
+        rehash(size_t(ilist.size()) + _num_filled);
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
             do_insert(*it);
     }
@@ -849,7 +848,7 @@ public:
 
     bool reserve(size_t num_elems) noexcept
     {
-        size_t required_buckets = num_elems + num_elems / 4;
+        size_t required_buckets = num_elems + num_elems / MXLOAD_FACTOR;
         if (EMH_LIKELY(required_buckets < _num_buckets))
             return false;
 
@@ -966,7 +965,7 @@ private:
         return offset;
     }
 
-    inline void set_group_probe(size_t gbucket, int group_offset)
+    inline void set_group_probe(size_t gbucket, int group_offset) noexcept
     {
 #if EMH_SAFE_PSL
         _states[gbucket + group_index] = group_offset <= 128 ? group_offset : 128 + group_offset / 128;
@@ -975,13 +974,13 @@ private:
 #endif
     }
 
-    inline void set_states(size_t ebucket, int8_t key_h2)
+    inline void set_states(size_t ebucket, int8_t key_h2) noexcept
     {
         //assert(_states[ebucket] < EFILLED && key_h2 <= EFILLED);
         _states[ebucket] = key_h2;
     }
 
-    inline size_t get_next_bucket(size_t next_bucket, size_t offset) const
+    inline size_t get_next_bucket(size_t next_bucket, size_t offset) const noexcept
     {
 #if EMH_PSL_LINEAR == 0
         if (offset < 8)// || _num_buckets < 32 * simd_bytes)
@@ -1019,13 +1018,13 @@ private:
             }
 
             if ((int)++offset > group_probe(main_bucket))
-                break;
+                return _num_buckets;
 //            if (group_has_empty(next_bucket))
 //                break;
             next_bucket = get_next_bucket(next_bucket, offset);
         }
 
-        return _num_buckets;
+        return 0;
     }
 
     // Find the bucket with this key, or return a good empty bucket to place the key in.
@@ -1033,7 +1032,9 @@ private:
     template<typename K>
     size_t find_or_allocate(const K& key, bool& bnew) noexcept
     {
-        reserve(_num_filled);
+        size_t required_buckets = _num_filled + _num_filled / MXLOAD_FACTOR;
+        if (EMH_LIKELY(required_buckets >= _num_buckets))
+            rehash(required_buckets + 2);
 
         size_t main_bucket;
         const auto key_h2 = hash_key2(main_bucket, key);
@@ -1043,7 +1044,7 @@ private:
         constexpr size_t chole = (size_t)-1;
         size_t hole = chole;
 
-        while (true) {
+        do {
             const auto vec = LOAD_EPI8((decltype(&simd_empty))(&_states[next_bucket]));
             auto maskf = (uint32_t)MOVEMASK_EPI8(CMPEQ_EPI8(vec, filled)) & group_bmask;
 
@@ -1058,27 +1059,21 @@ private:
                 maskf &= maskf - 1;
             }
 
-            if (group_has_empty(next_bucket)) {
-                const auto maske = (uint32_t)MOVEMASK_EPI8(CMPEQ_EPI8(vec, simd_empty)) & group_bmask;
-                auto ebucket = next_bucket + CTZ(maske);
-                if (EMH_UNLIKELY(hole != chole))
-                    ebucket = hole;
-                set_states(ebucket, key_h2);
-                return ebucket;
-            }
-
-            //3. find erased
-            else if (hole == chole) {
-                const auto maskd = (uint32_t)MOVEMASK_EPI8(CMPEQ_EPI8(vec, simd_delete)) & group_bmask;
-                if (maskd != 0)
+            if (hole == chole) {
+                //2. find empty/deleted
+                const auto maskd = (size_t)MOVEMASK_EPI8(CMPGT_EPI8(simd_filled, vec)) & group_bmask;
+                if (group_has_empty(next_bucket)) {
                     hole = next_bucket + CTZ(maskd);
+                    set_states(hole, key_h2);
+                    return hole;
+                }
+                else if (maskd != 0) {
+                    hole = next_bucket + CTZ(maskd);
+                }
             }
-
-            //4. next round
+            //3. next round
             next_bucket = get_next_bucket(next_bucket, (size_t)++offset);
-            if (offset > group_probe(main_bucket))
-                break;
-        }
+        }  while (offset <= group_probe(main_bucket));
 
         if (hole != chole) {
             set_states(hole, key_h2);
@@ -1112,7 +1107,7 @@ private:
             if (maske != 0) {
                 const auto probe = CTZ(maske) + next_bucket;
                 prefetch_heap_block((char*)&_pairs[probe]);
-                set_group_probe(gbucket, offset);
+                set_group_probe(gbucket, offset);//bugs for unique
                 return probe;
             }
             next_bucket = get_next_bucket(next_bucket, (size_t)++offset);
@@ -1124,7 +1119,7 @@ private:
     size_t find_filled_slot(size_t next_bucket) const noexcept
     {
         if (EMH_UNLIKELY(_num_filled) == 0)
-             return _num_buckets;
+            return _num_buckets;
         //next_bucket -= next_bucket % simd_bytes;
         while (true) {
             const auto maske = filled_mask(next_bucket);

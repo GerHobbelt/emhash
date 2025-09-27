@@ -698,7 +698,7 @@ static void bench_udb3()
         }
     }
 
-    printf(" z[%d] = %d total time = %.2lf lf = %.2f\n", is_del, (int)z, now2sec() - nows, h.load_factor());
+    printf(" z[%d] = %d lf = %.2f total time = %.2lf\n", is_del, (int)z, h.load_factor(), now2sec() - nows);
 }
 
 template<typename HMAP>
@@ -2186,7 +2186,7 @@ static void runTest(int sflags, int eflags)
         {  bench_InsertEraseBegin<boost::unordered_flat_map <int64_t, int, hash_func>>(); }
 #endif
 #if HAVE_INDIVI
-        {  bench_InsertEraseBegin<indivi::flat_umap <int64_t, int, hash_func>>(); }
+//        {  bench_InsertEraseBegin<indivi::flat_umap <int64_t, int, hash_func>>(); }
         {  bench_InsertEraseBegin<indivi::flat_wmap <int64_t, int, hash_func>>(); }
 #endif
 
