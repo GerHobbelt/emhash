@@ -1,9 +1,13 @@
+#ifndef TTKey
+    #define TTKey           1
+#endif
+
+//#define SMK 1
+#define  HAVE_INDIVI 1
+
 #include "util.h"
 #include <algorithm>
-
-#ifndef TKey
-    #define TKey           1
-#endif
+//#define EMH_SIZE_TYPE_BIT 64
 
 #if __GNUC__ > 4 && __linux__
 #include <ext/pb_ds/assoc_container.hpp>
@@ -24,15 +28,21 @@ std::map<std::string, std::string> maps =
     {"btree", "btree_set"},
     {"qchash", "qc-hash"},
 
-//    {"emhash7", "emhash7"},
-//    {"emhash2", "emhash2"},
+    {"emhash7", "emhash7"},
+    {"emhash2", "emhash2"},
     {"emhash9", "emhash9"},
 #if HAVE_BOOST
     {"boostf",  "boost_flat"},
 #endif
+ #ifdef HAVE_INDIVI
+    {"indiviu", "indivi_uset"},
+    {"indiviw", "indivi_wset"},
+ #endif
+
     {"emhash8", "emhash8"},
-    {"martind", "martin_dense"},
-    {"ck_hash", "sk_hset"},
+    {"emhash6", "emhash6"},
+//    {"martind", "martin_dense"},
+    {"ck_hash", "ck_hset"},
 
     {"gp_hash", "gp_hash"},
 
@@ -57,7 +67,7 @@ std::map<std::string, std::string> maps =
 
 //rand data type
 #ifndef RT
-    #define RT 3  //1 wyrand 2 sfc64 3 RomuDuoJr 4 Lehmer64 5 mt19937_64
+    #define RT 1 //1 wyrand 2 sfc64 3 RomuDuoJr 4 Lehmer64 5 mt19937_64
 #endif
 
 //#define PHMAP_HASH          1
@@ -85,10 +95,16 @@ std::map<std::string, std::string> maps =
 #include "hash_set4.hpp"
 #include "hash_set8.hpp"
 
-
 #ifdef HAVE_BOOST
-#include <boost/unordered/unordered_flat_set.hpp>
+    #include <boost/unordered/unordered_flat_set.hpp>
 #endif
+
+#ifdef HAVE_INDIVI
+    # include "indivi/flat_uset.h"
+    # include "indivi/flat_wset.h"
+#endif
+
+
 //https://www.zhihu.com/question/46156495
 //https://eourcs.github.io/LockFreeCuckooHash/
 //https://lemire.me/blog/2018/08/15/fast-strongly-universal-64-bit-hashing-everywhere/
@@ -121,9 +137,8 @@ std::map<std::string, std::string> maps =
 //https://leventov.medium.com/hash-table-tradeoffs-cpu-memory-and-variability-22dc944e6b9a
 
 
-#if HOOD_HASH
-    #include "martin/robin_hood.h"    //https://github.com/martin/robin-hood-hashing/blob/master/src/include/robin_hood.h
-#endif
+#include "martin/robin_hood.h"    //https://github.com/martin/robin-hood-hashing/blob/master/src/include/robin_hood.h
+//#endif
 #if PHMAP_HASH
     #include "phmap/phmap.h"          //https://github.com/greg7mdp/parallel-hashmap/tree/master/parallel_hashmap
 #endif
@@ -200,9 +215,10 @@ struct StuHasher
     }
 };
 
-#if TKey == 0
+#if TTKey == 0
 #ifndef SMK
-    typedef unsigned int keyType;
+    typedef uint keyType;
+//    typedef int16_t keyType;
     #define sKeyType    "int"
 #else
     typedef short        keyType;
@@ -210,39 +226,39 @@ struct StuHasher
 #endif
     #define TO_KEY(i)   (keyType)i
     #define KEY_INT     1
-#elif TKey == 1
-    typedef int64_t      keyType;
+#elif TTKey == 1
+    typedef size_t       keyType;
     #define TO_KEY(i)   (keyType)i
     #define sKeyType    "int64_t"
     #define KEY_INT     1
-#elif TKey == 2
+#elif TTKey == 2
     #define KEY_STR     1
     typedef std::string keyType;
     #define TO_KEY(i)   std::to_string(i)
     #define sKeyType    "string"
-#elif TKey == 3
+#elif TTKey == 3
     #define KEY_CLA    1
     typedef StructValue keyType;
     #define TO_KEY(i)   StructValue((int64_t)i)
     #define sKeyType    "Struct"
-#elif TKey == 4
+#elif TTKey == 4
     #define KEY_STR     1
     typedef std::string_view keyType;
     #define TO_KEY(i)   std::to_string(i)
     #define sKeyType    "string_view"
 #endif
 
-#if TVal == 0
-    typedef int         valueType;
+#if TTVal == 0
+    typedef short       valueType;
     #define TO_VAL(i)   i
     #define TO_SUM(i)   i
-    #define sValueType  "int"
-#elif TVal == 1
+    #define sValueType  "short"
+#elif TTVal == 1
     typedef int64_t     valueType;
     #define TO_VAL(i)   i
     #define TO_SUM(i)   i
     #define sValueType  "int64_t"
-#elif TVal == 2
+#elif TTVal == 2
     typedef std::string valueType;
     #define TO_VAL(i)   ""
     #define TO_SUM(i)   i.size()
@@ -259,8 +275,8 @@ struct StuHasher
     #define sValueType  "Struct"
 #endif
 
-static int test_case = 0, test_extra = 0;
-static int loop_vector_time = 0, loop_rand = 0;
+static int test_case = 0;
+static int loop_vector_time = 0;
 static int func_index = 0, func_size = 10;
 static int func_first = 0, func_last = 0;
 static float hlf = 0.0;
@@ -444,10 +460,10 @@ template<class hash_type>
 static void hash_iter(const hash_type& ht_hash, const std::string& hash_name)
 {
     auto ts1 = getus(); size_t sum = 0;
-    for (const auto& v : ht_hash)
+    for (const auto& _ : ht_hash)
         sum += sum;
 
-    for (auto& v : ht_hash)
+    for (auto& _ : ht_hash)
         sum += 2;
 
     for (auto it = ht_hash.begin(); it != ht_hash.end(); it++)
@@ -497,7 +513,7 @@ static void insert_erase(const std::string& hash_name, const std::vector<keyType
             ht_hash.erase(vList[i - vsmall]);
     }
 
-    if (vList.size() % 3 == 0)
+    if (vList.size() % 2 == 0)
         ht_hash.clear();
     const auto vmedium = vList.size() / 100;
     for (size_t i = 0; i < vList.size(); i++) {
@@ -587,15 +603,21 @@ static void multi_small_ife(const std::string& hash_name, const std::vector<keyT
 template<class hash_type>
 static void insert_find_erase(const hash_type& ht_hash, const std::string& hash_name, std::vector<keyType>& vList)
 {
-    auto ts1 = getus(); size_t sum = 1;
+    size_t sum = vList.size();
     hash_type tmp(ht_hash);
 
+    for (const auto& v : vList)
+    {
+        tmp.emplace(v);
+    }
+
+    auto ts1 = getus();
     for (auto & v : vList) {
 #if KEY_INT
         auto v2 = keyType(v % 2 == 0 ? v + sum : v - sum);
 #elif KEY_CLA
         int64_t v2(v.lScore + sum);
-#elif TKey != 4
+#elif TTKey != 4
         v += char(128 + (int)v[0]);
         const auto &v2 = v;
 #else
@@ -605,9 +627,12 @@ static void insert_find_erase(const hash_type& ht_hash, const std::string& hash_
 #if QC_HASH == 0
         sum += tmp.count(v2);
 #endif
-        tmp.erase(it.first);
+        if (sum % 2)
+            tmp.erase(it.first);
+        else
+            tmp.erase(v2);
     }
-    check_func_result(hash_name, __FUNCTION__, sum, ts1, 3);
+    check_func_result(hash_name, __FUNCTION__, sum, ts1);
 }
 
 template<class hash_type>
@@ -662,12 +687,12 @@ static void insert_high_load(const std::string& hash_name, const std::vector<key
             auto v2 = v - i;
 #elif KEY_CLA
             auto v2 = v.lScore + (v.lScore / 11) + i;
-#elif TKey != 4
+#elif TTKey != 4
             auto v2 = v; v2[0] += '2';
 #else
             keyType v2(v.data(), v.size() - 1);
 #endif
-            tmp.insert(v2);
+            tmp.emplace(v2);
         }
     }
 
@@ -678,7 +703,7 @@ static void insert_high_load(const std::string& hash_name, const std::vector<key
         auto v2 = v + i;
 #elif KEY_CLA
         auto v2 = (v.lScore / 7) + 4 * v.lScore;
-#elif TKey != 4
+#elif TTKey != 4
         auto v2 = v; v2[0] += '1';
 #else
         keyType v2(v.data(), v.size() - 1);
@@ -695,10 +720,10 @@ static uint8_t l1_cache[64 * 1024];
 template<class hash_type>
 static void find_hit_0(const hash_type& ht_hash, const std::string& hash_name, const std::vector<keyType>& vList)
 {
-    auto n = ht_hash.size();
+    //auto n = ht_hash.size();
 
 #if KEY_STR
-#if TKey != 4
+#if TTKey != 4
     auto skey = get_random_alphanum_string(STR_SIZE);
 #endif
 #endif
@@ -706,7 +731,7 @@ static void find_hit_0(const hash_type& ht_hash, const std::string& hash_name, c
     auto ts1 = getus();
     for (const auto& v : vList) {
 #if KEY_STR
-#if TKey != 4
+#if TTKey != 4
         skey[v.size() % STR_SIZE + 1] ++;
         sum += ht_hash.count(skey);
 #else
@@ -866,7 +891,7 @@ static int buildTestData(int size, std::vector<keyType>& randdata)
 
 #ifdef KEY_STR
     for (int i = 0; i < size; i++)
-#if TKey != 4
+#if TTKey != 4
         randdata.emplace_back(get_random_alphanum_string(srng() % STR_SIZE + 4));
 #else
         randdata.emplace_back(get_random_alphanum_string_view(srng() % STR_SIZE + 4));
@@ -972,7 +997,7 @@ static void benOneHash(const std::string& hash_name, const std::vector<keyType>&
             next += nList.size() / 2 - v;
 #elif KEY_CLA
             next.lScore += nList.size() / 2 - v;
-#elif TKey != 4
+#elif TTKey != 4
             next[v % next.size()] += 1;
 #else
             next = next.substr(0, next.size() - 1);
@@ -1160,20 +1185,29 @@ static int benchHashSet(int n)
         {  benOneHash<phmap::flat_hash_set <keyType,  ehash_func>>("phmap", vList); }
         {  benOneHash<robin_hood::unordered_flat_set <keyType,  ehash_func>>("martin", vList); }
 #endif
-#if HAVE_BOOST
-        {  benOneHash<boost::unordered_flat_set<keyType, ehash_func>>("boostf", vList); }
-#endif
+
 #if ABSL_HMAP
         {  benOneHash<absl::flat_hash_set <keyType, ehash_func>>("absl", vList); }
 #endif
+#if HAVE_BOOST
+        { benOneHash<boost::unordered_flat_set<keyType, ehash_func>>("boostf", vList); }
+#endif
+        {  benOneHash<emhash2::HashSet <keyType, ehash_func>>("emhash2", vList); }
 
-        {  benOneHash<emhash8::HashSet <keyType,  ehash_func>>("emhash8", vList); }
-        {  benOneHash<emilib::HashSet  <keyType,  ehash_func>>("emiset", vList); }
-        {  benOneHash<emilib2::HashSet <keyType,  ehash_func>>("emiset2", vList); }
-        {  benOneHash<emilib3::HashSet <keyType,  ehash_func>>("emiset2s", vList); }
-        {  benOneHash<emhash7::HashSet <keyType,  ehash_func>>("emhash7", vList); }
-        {  benOneHash<emhash2::HashSet <keyType,  ehash_func>>("emhash2", vList); }
-        {  benOneHash<emhash9::HashSet <keyType,  ehash_func>>("emhash9", vList); }
+        {  benOneHash<emhash8::HashSet <keyType, ehash_func>>("emhash8", vList); }
+//        {  benOneHash<emhash6::HashSet <keyType, ehash_func>>("emhash6", vList); }
+        {  benOneHash<emhash7::HashSet <keyType, ehash_func>>("emhash7", vList); }
+        {  benOneHash<emilib ::HashSet <keyType, ehash_func>>("emiset", vList); }
+        {  benOneHash<emilib2::HashSet <keyType, ehash_func>>("emiset2", vList); }
+
+
+#if HAVE_INDIVI
+        {  benOneHash<indivi::flat_uset<keyType, ehash_func>>("indiviu", vList); }
+        {  benOneHash<indivi::flat_wset<keyType, ehash_func>>("indiviw", vList); }
+#endif
+
+        {  benOneHash<emilib3::HashSet <keyType, ehash_func>>("emiset2s", vList); }
+        {  benOneHash<emhash9::HashSet <keyType, ehash_func>>("emhash9", vList); }
 
 //        {  benOneHash<CK::HashSet <keyType,  ehash_func>>("ck_hash", vList); }
 
@@ -1194,7 +1228,7 @@ static void high_load()
     size_t maxSize = 1U << 28;
     size_t numReps = 100;
 
-    std::random_device rd;
+    //std::random_device rd;
     auto dis = std::uniform_int_distribution<uint32_t>{0, (1U << 31) - 1};
 
     for (size_t rep = 0; rep < numReps; ++rep) {
@@ -1240,6 +1274,88 @@ static void high_load()
     }
 }
 
+
+int test7() 
+{
+    using clock = std::chrono::steady_clock;
+    using ehash_func = robin_hood::hash<uint64_t>;
+    // ankerl::unordered_dense::hash<uint64_t>;
+#if 1
+    emhash7::HashSet<uint64_t, ehash_func> current_uniques, old_uniques;
+#elif 1
+    emilib3::HashSet<uint64_t, ehash_func> current_uniques, old_uniques;
+#else
+    boost::unordered_flat_set<uint64_t, ehash_func> current_uniques, old_uniques;
+#endif
+
+
+    WyRand random(0); // Set a fixed seed for reproducibility.
+
+    std::vector<uint64_t> unique_elements_counts(1, 0);
+
+    constexpr int BRANCH_FACTOR = 1000;
+
+    for (int j = 0; j < BRANCH_FACTOR; ++j) {
+        uint64_t longrand = random();
+        current_uniques.insert(longrand);
+    }
+
+    for (int i = 0; i < 5; ++i) {
+        size_t last_uniques_size = *unique_elements_counts.rbegin();
+
+        std::swap(old_uniques, current_uniques);
+        current_uniques.clear();
+
+        // Prepare the progress indicator
+
+        auto start_time = clock::now();
+        auto last_update_time = start_time;
+
+        size_t old_elements_to_process = last_uniques_size;
+        size_t old_elements_processed = 0;
+
+        // and reserve some elements.
+
+        current_uniques.reserve(last_uniques_size * 2);
+
+        for (const auto _ : old_uniques) {
+            for (int j = 0; j < BRANCH_FACTOR; ++j) {
+                uint64_t longrand = random();
+                current_uniques.insert(longrand);
+            }
+
+            // Everything below relates to the progress indicator and
+            // can be removed; the program will still crash.
+
+            ++old_elements_processed;
+            if ((old_elements_processed & 16383) == 0) {
+                auto update_time = clock::now();
+                double elapsed_since_last =
+                    std::chrono::duration<double>(
+                        update_time - start_time).count();
+
+                // Don't show progress reports more often than evey half second.
+                if (elapsed_since_last < 0.5) { continue; }
+
+                last_update_time = clock::now();
+                double elapsed_seconds = std::chrono::duration<double>(
+                    last_update_time - start_time).count();
+                double iters_per_s = old_elements_processed / elapsed_seconds;
+
+                std::cout << "progress: " << old_elements_processed / (double)old_elements_to_process << "\t";
+                std::cout << "k = " << i << ", ";
+                std::cout << "it/s = " << iters_per_s << "\t";
+                std::cout << "seconds left: " << (old_elements_to_process - old_elements_processed) / iters_per_s << std::endl;
+            }
+        }
+
+        size_t num_uniques = current_uniques.size();
+        std::cout << i << "\t" << num_uniques << std::endl;
+        unique_elements_counts.push_back(num_uniques);
+    }
+    return 0;
+}
+
 int main(int argc, char* argv[])
 {
     auto start = getus();
@@ -1251,7 +1367,7 @@ int main(int argc, char* argv[])
     auto maxc = 500;
     int minn = (1000 * 100 * 8) / sizeof(keyType) + 12345;
     int maxn = 100*minn;
-    if (TKey < 3)
+    if (TTKey < 3)
         minn *= 2;
 
     const int type_size = (sizeof(keyType) + 4);
@@ -1306,6 +1422,10 @@ int main(int argc, char* argv[])
                     maps.erase("absl");
                 else if (c == 'e') {
                     maps.erase("emiset");
+                }
+                else if (c == 'i') {
+                    maps.erase("indiviw");
+                    maps.erase("indiviu");
                 }
                 else if (c == 'b') {
                     maps.emplace("btree", "btree_set");

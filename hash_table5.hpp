@@ -962,7 +962,7 @@ public:
         return { {this, bucket}, bempty };
     }
 
-    template<typename K, typename V>
+    template<typename K = KeyT, typename V>
     std::pair<iterator, bool> do_insert(K&& key, V&& val) noexcept
     {
         const auto bucket = find_or_allocate(key);
@@ -973,7 +973,7 @@ public:
         return { {this, bucket}, bempty };
     }
 
-    template<typename K, typename V>
+    template<typename K = KeyT, typename V>
     std::pair<iterator, bool> do_assign(K&& key, V&& val) noexcept
     {
         check_expand_need();
@@ -1385,7 +1385,7 @@ public:
         //if (sizeof(KeyT) < sizeof(size_type) && buckets >= (1ul << (2 * 8)))
         //    buckets = 2ul << (sizeof(KeyT) * 8);
 
-        if (buckets > max_size() || buckets < _num_filled)
+        if (buckets > max_size() || buckets < (uint64_t)_num_filled)
             std::abort();//TODO: throwOverflowError
 
         auto num_buckets = (size_type)buckets;

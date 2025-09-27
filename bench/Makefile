@@ -135,21 +135,21 @@ ifneq ($(QB),)
 	$(CXX) $(CXXFLAGS) -std=c++20 -I. qbench.cpp -o qbench
 endif
 
-	$(CXX) $(CXXFLAGS) martin_bench.cpp -o mbench
 #	$(CXX) $(CXXFLAGS) -Werror=conversion martin_bench.cpp -o mbench
 	$(CXX) $(CXXFLAGS) ebench.cpp -o ebench
+	$(CXX) $(CXXFLAGS) sbench.cpp -o sb
 	$(CXX) $(CXXFLAGS) hash_join.cpp -o join_hash
+	$(CXX) $(CXXFLAGS) martin_bench.cpp -o mbench
 	$(CXX) $(CXXFLAGS) buint64.cpp -o bi
 	$(CXX) $(CXXFLAGS) bstring.cpp -o bs
 	$(CXX) $(CXXFLAGS) word_count.cpp -o wc
 	$(CXX) $(CXXFLAGS) tbench.cpp -o tbench
-	$(CXX) $(CXXFLAGS) sbench.cpp -o sb
 	$(CXX) $(CXXFLAGS) hbench.cpp -o hbench
 	$(CXX) $(CXXFLAGS) simple_bench.cpp -o simbench
-	$(CXX) $(CXXFLAGS) zhash_bench.cc -o zbench
 	$(CXX) $(CXXFLAGS) app.cpp -o app
 	$(CXX) $(CXXFLAGS) fbench.cpp -o fbench
 	$(CXX) $(CXXFLAGS) -fopenmp hash_join2.cpp -o join_hash2
+	$(CXX) $(CXXFLAGS) zhash_bench.cc -o zbench
 ifneq ($(EMH),)
 	$(CXX) $(CXXFLAGS) template.cc -o template
 	$(CXX) $(CXXFLAGS) patch_bench.cpp -o pabench

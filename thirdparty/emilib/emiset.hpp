@@ -1,8 +1,27 @@
-// By Emil Ernerfeldt 2014-2016
-// LICENSE:
-//   This software is dual-licensed to the public domain and under the following
-//   license: you are granted a perpetual, irrevocable license to copy, modify,
-//   publish, and distribute this file as you see fit.
+// version 1.0.2
+// https://github.com/ktprime/emhash/blob/master/thirdparty/emilib/emiset.hpp
+//
+// Licensed under the MIT License <http://opensource.org/licenses/MIT>.
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2021-2025 Huang Yuanbing & bailuzhou AT 163.com
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE
 
 #pragma once
 
@@ -13,17 +32,10 @@
 namespace emilib {
 
 /// like std::equal_to but no need to `#include <functional>`
-template<typename T>
-struct HashSetEqualTo
-{
-	constexpr bool operator()(const T& lhs, const T& rhs) const
-	{
-		return lhs == rhs;
-	}
-};
+
 
 /// A cache-friendly hash set with open addressing, linear probing and power-of-two capacity
-template <typename KeyT, typename HashT = std::hash<KeyT>, typename EqT = HashSetEqualTo<KeyT>>
+template <typename KeyT, typename HashT = std::hash<KeyT>, typename EqT = std::equal_to<KeyT>>
 class HashSet
 {
 private:
@@ -91,12 +103,9 @@ public:
 				_bucket++;
 			} while (_bucket < _set->_num_buckets && _set->_states[_bucket] != State::FILLED);
 		}
-
-	//private:
-	//	friend class htype;
 	public:
 		htype* _set;
-		size_t  _bucket;
+		int    _bucket;
 	};
 
 	class const_iterator
@@ -164,7 +173,7 @@ public:
 	//	friend class htype;
 	public:
 		const htype* _set;
-		size_t        _bucket;
+		int          _bucket;
 	};
 
 	// ------------------------------------------------------------------------
@@ -202,7 +211,7 @@ public:
 
 	~HashSet()
 	{
-		for (size_t bucket=0; bucket<_num_buckets; ++bucket) {
+		for (int bucket = 0; bucket < _num_buckets; ++bucket) {
 			if (_states[bucket] == State::FILLED) {
 				_keys[bucket].~KeyT();
 			}
@@ -227,8 +236,8 @@ public:
 
 	iterator begin()
 	{
-		size_t bucket = 0;
-		while (bucket<_num_buckets && _states[bucket] != State::FILLED) {
+		int bucket = 0;
+		while (bucket < _num_buckets && _states[bucket] != State::FILLED) {
 			++bucket;
 		}
 		return iterator(this, bucket);
@@ -236,8 +245,8 @@ public:
 
 	const_iterator cbegin() const
 	{
-		size_t bucket = 0;
-		while (bucket<_num_buckets && _states[bucket] != State::FILLED) {
+		int bucket = 0;
+		while (bucket < _num_buckets && _states[bucket] != State::FILLED) {
 			++bucket;
 		}
 		return const_iterator(this, bucket);
@@ -411,7 +420,7 @@ public:
 	/// Remove all elements, keeping full capacity.
 	void clear()
 	{
-		for (size_t bucket=0; bucket<_num_buckets; ++bucket) {
+		for (size_t bucket = 0; bucket < _num_buckets; ++bucket) {
 			if (_states[bucket] == State::FILLED) {
 				_states[bucket] = State::INACTIVE;
 				_keys[bucket].~KeyT();
@@ -425,7 +434,7 @@ public:
 	void reserve(size_t num_elems)
 	{
 		size_t required_buckets = num_elems + num_elems / 4 + 1;
-		if (required_buckets <= _num_buckets) {
+		if (required_buckets <= (size_t)_num_buckets) {
 			return;
 		}
 		size_t num_buckets = 4;
@@ -455,7 +464,7 @@ public:
 
 		_max_probe_length = -1;
 
-		for (size_t src_bucket=0; src_bucket<old_num_buckets; src_bucket++) {
+		for (int src_bucket = 0; src_bucket < old_num_buckets; src_bucket++) {
 			if (old_states[src_bucket] == State::FILLED) {
 				auto& src = old_keys[src_bucket];
 
@@ -467,8 +476,6 @@ public:
 				src.~KeyT();
 			}
 		}
-
-		// DCHECK_EQ_F(old_num_filled, _num_filled);
 
 		free(old_states);
 		free(old_keys);
@@ -525,8 +532,6 @@ private:
 		}
 
 		// No key found - but maybe a hole for it
-		//DCHECK_EQ_F(offset, _max_probe_length+1);
-
 		if (hole != (size_t)-1) {
 			return hole;
 		}
