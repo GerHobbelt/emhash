@@ -4,7 +4,7 @@
 //
 // Licensed under the MIT License <http://opensource.org/licenses/MIT>.
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2020-2025 Huang Yuanbing & bailuzhou AT 163.com
+// Copyright (c) 2020-2026 Huang Yuanbing & bailuzhou AT 163.com
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -1910,9 +1910,5 @@ private:
 //template <class Key, class Val> using ehmap7 = emhash7::HashMap<Key, Val, std::hash<Key>, std::equal_to<Key>>;
 #endif
 
-//TODO
-//2. improve rehash and find miss performance(reduce peak memory)
-//3. dump or Serialization interface
-//4. node hash map support
-//5. load_factor > 1.0 && add grow ration
-//... https://godbolt.org/
+//1. improve rehash and find miss performance(reduce peak memory)
+//2. load_factor > 1.0 && add grow ration
