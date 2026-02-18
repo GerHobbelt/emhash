@@ -39,6 +39,8 @@
 
 #if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__)
 #include <xmmintrin.h>
+#elif _WIN32 && defined(_M_ARM64)
+#include <intrin.h>
 #endif
 
 #undef  EMH_NEW
@@ -1226,6 +1228,8 @@ private:
 #if defined(__GNUC__) || defined(__clang__)
         (void)ctrl;
 //        __builtin_prefetch(static_cast<const void*>(ctrl));
+#elif _WIN32 && defined(_M_ARM64)
+        __prefetch((const char*)ctrl);
 #elif _WIN32
         _mm_prefetch((const char*)ctrl, _MM_HINT_T0);
 #endif
@@ -1451,8 +1455,8 @@ private:
     //it will break the orgin link and relnik again.
     //before: main_bucket --> prev_bucket --> bucket --> next_bucket(maybe none exist)
     //atfer : main_bucket --> prev_bucket   (kickout)    next_bucket <-- new_bucket(bucket)
-    //                          \|/                                        /|\
-    //                          -|------------------------------------------|
+    ///                          \|/                                        /|\
+    ///                          -|------------------------------------------|
     size_type kickout_bucket(const size_type kmain, const size_type bucket) noexcept
     {
         const auto next_bucket = _index[bucket].next;
