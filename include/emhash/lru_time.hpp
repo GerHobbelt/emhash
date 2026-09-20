@@ -1,11 +1,7 @@
-// By Huang Yuanbing 2019-2024
-// bailuzhou@163.com
-// version 2.1.1
-
-// LICENSE:
-//   This software is dual-licensed to the public domain and under the following
-//   license: you are granted a perpetual, irrevocable license to copy, modify,
-//   publish, and distribute this file as you see fit.
+// emhash LRU cache (time-based eviction)
+// https://github.com/ktprime/emhash
+// SPDX-License-Identifier: Unlicense OR MIT-0
+// Copyright (c) 2019-2026 Huang Yuanbing bailuzhou@163.com
 
 // From
 // NUMBER OF PROBES / LOOKUP       Successful            Unsuccessful
@@ -822,7 +818,10 @@ public:
         }
 
         auto new_pairs = static_cast<PairT*>(malloc((2 + num_buckets) * sizeof(PairT)));
+        if (!new_pairs)
+            throw std::bad_alloc();
         auto old_num_filled = _num_filled;
+        const auto old_num_buckets = _num_buckets;
         auto old_pairs = _pairs;
         _pairs = new_pairs;
 
@@ -838,7 +837,7 @@ public:
         _pairs[_num_buckets + 0].timeout = _pairs[_num_buckets + 1].timeout = INACTIVE;
 
         auto now_ts = nowts();
-        for (uint32_t src_bucket = 0; old_num_filled > 0; src_bucket++) {
+        for (uint32_t src_bucket = 0; old_num_filled > 0 && src_bucket < old_num_buckets; src_bucket++) {
             if (NEXT_BUCKET(old_pairs, src_bucket) == INACTIVE)
                 continue;
 
@@ -857,7 +856,8 @@ public:
             auto mbucket = _num_filled;
             char buff[255] = {0};
             snprintf(buff, sizeof(buff), "    _num_filled/aver_size/K.V/pack/ = %u/%2.lf/%s.%s/%zd", _num_filled,
-                     static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(), typeid(ValueT).name(), sizeof(_pairs[0]));
+                     static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(), typeid(ValueT).name(),
+                     sizeof(_pairs[0]));
 #if EMHASH_USER_LOG
             static uint32_t ihashs = 0;
             FDLOG() << "hash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << std::endl;

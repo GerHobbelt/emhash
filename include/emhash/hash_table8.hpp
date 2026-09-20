@@ -102,6 +102,9 @@ class HashMap {
                   "KeyT must be copy-constructible or move-constructible");
     static_assert(std::is_copy_constructible<ValueT>::value || std::is_move_constructible<ValueT>::value,
                   "ValueT must be copy-constructible or move-constructible");
+    static_assert(std::is_invocable_v<HashT, const KeyT&>, "HashT must be callable with const KeyT&");
+    static_assert(std::is_invocable_v<EqT, const KeyT&, const KeyT&>,
+                  "EqT must be callable with (const KeyT&, const KeyT&)");
 
 #ifndef EMH_DEFAULT_LOAD_FACTOR
     constexpr static float EMH_DEFAULT_LOAD_FACTOR = 0.80f;
@@ -236,7 +239,7 @@ public:
         : _pair_allocator(PairAllocTraits::select_on_container_copy_construction(rhs._pair_allocator)),
           _index_allocator(IndexAllocTraits::select_on_container_copy_construction(rhs._index_allocator)) {
         if (rhs.load_factor() > EMH_MIN_LOAD_FACTOR) {
-            _pairs_capacity = static_cast<size_type>(static_cast<float>(rhs._num_buckets) * rhs.max_load_factor()) + 4;
+            _pairs_capacity = rhs._pairs_capacity;
             _pairs = alloc_bucket(_pairs_capacity);
             _index = alloc_index(rhs._num_buckets);
             clone(rhs);
@@ -256,13 +259,13 @@ public:
     HashMap(std::initializer_list<value_type> ilist) {
         init(static_cast<size_type>(ilist.size()));
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     template <class InputIt> HashMap(InputIt first, InputIt last, size_type bucket_count = 4) {
         init(static_cast<size_type>(std::distance(first, last)) + bucket_count);
         for (; first != last; ++first)
-            emplace(*first);
+            (void)emplace(*first);
     }
 
     explicit HashMap(const allocator_type& alloc) : _pair_allocator(alloc), _index_allocator(alloc) { init(2); }
@@ -274,7 +277,7 @@ public:
 
     HashMap(const HashMap& rhs, const allocator_type& alloc) : _pair_allocator(alloc), _index_allocator(alloc) {
         if (rhs.load_factor() > EMH_MIN_LOAD_FACTOR) {
-            _pairs_capacity = static_cast<size_type>(static_cast<float>(rhs._num_buckets) * rhs.max_load_factor()) + 4;
+            _pairs_capacity = rhs._pairs_capacity;
             _pairs = alloc_bucket(_pairs_capacity);
             _index = alloc_index(rhs._num_buckets);
             clone(rhs);
@@ -316,7 +319,7 @@ public:
             dealloc_bucket(_pairs, _pairs_capacity);
             dealloc_index(_index, _num_buckets);
             _index = alloc_index(rhs._num_buckets);
-            _pairs_capacity = static_cast<size_type>(static_cast<float>(rhs._num_buckets) * rhs.max_load_factor()) + 4;
+            _pairs_capacity = rhs._pairs_capacity;
             _pairs = alloc_bucket(_pairs_capacity);
         }
 
@@ -361,7 +364,7 @@ public:
         //        _eq          = rhs._eq;
         _num_buckets = rhs._num_buckets;
         _num_filled = rhs._num_filled;
-        _pairs_capacity = rhs._pairs_capacity;
+        // _pairs_capacity is NOT overwritten - it was set by caller based on allocation size
         _mlf = rhs._mlf;
         _last = rhs._last;
         _mask = rhs._mask;
@@ -785,7 +788,7 @@ public:
     void insert(std::initializer_list<value_type> ilist) {
         reserve(ilist.size() + _num_filled, false);
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     /// @brief Insert a key-value pair without checking for duplicates.
@@ -892,7 +895,7 @@ public:
     /// @return 1 if the element was erased, 0 if the key was not found.
     /// Erase an element from the hash table.
     /// return 0 if element was not found
-    [[nodiscard]] size_type erase(const KeyT& key) {
+    size_type erase(const KeyT& key) {
         const auto key_hash = hash_key(key);
         const auto sbucket = find_filled_bucket(key, key_hash);
         if (sbucket == INACTIVE)
@@ -904,7 +907,7 @@ public:
     }
 
     // iterator erase(const_iterator begin_it, const_iterator end_it)
-    [[nodiscard]] iterator erase(const const_iterator& cit) {
+    iterator erase(const const_iterator& cit) {
         const auto slot = static_cast<size_type>(cit.kv_ - _pairs);
         size_type main_bucket;
         const auto sbucket = find_slot_bucket(slot, main_bucket);
@@ -913,7 +916,7 @@ public:
     }
 
     // only last >= first
-    [[nodiscard]] iterator erase(const_iterator first, const_iterator last) {
+    iterator erase(const_iterator first, const_iterator last) {
         auto esize = static_cast<long>(last.kv_ - first.kv_);
         auto tsize = static_cast<long>((_pairs + _num_filled) - last.kv_); // last to tail size
         auto next = first;
@@ -931,7 +934,7 @@ public:
         return {this, size_type(next.kv_ - _pairs)};
     }
 
-    template <typename Pred> [[nodiscard]] size_type erase_if(Pred pred) {
+    template <typename Pred> size_type erase_if(Pred pred) {
         auto old_size = size();
         for (auto it = begin(); it != end();) {
             if (pred(*it))
@@ -1220,8 +1223,9 @@ public:
             char buff[255] = {0};
             snprintf(buff, sizeof(buff),
                      "    _num_filled/aver_size/K.V/pack/collision|last = %u/%.2lf/%s.%s/%zd|%.2lf%%,%.2lf%%",
-                     _num_filled, static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(), typeid(ValueT).name(),
-                     sizeof(_pairs[0]), collision * 100.0 / _num_filled, last * 100.0 / _num_buckets);
+                     _num_filled, static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(),
+                     typeid(ValueT).name(), sizeof(_pairs[0]), collision * 100.0 / _num_filled,
+                     last * 100.0 / _num_buckets);
 #ifdef EMH_LOG
             static uint32_t ihashs = 0;
             EMH_LOG() << "hash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << std::endl;

@@ -240,6 +240,9 @@ class HashMap {
                   "KeyT must be copy-constructible or move-constructible");
     static_assert(std::is_copy_constructible<ValueT>::value || std::is_move_constructible<ValueT>::value,
                   "ValueT must be copy-constructible or move-constructible");
+    static_assert(std::is_invocable_v<HashT, const KeyT&>, "HashT must be callable with const KeyT&");
+    static_assert(std::is_invocable_v<EqT, const KeyT&, const KeyT&>,
+                  "EqT must be callable with (const KeyT&, const KeyT&)");
 
 #ifndef EMH_DEFAULT_LOAD_FACTOR
     constexpr static float EMH_DEFAULT_LOAD_FACTOR = 0.80f;
@@ -402,13 +405,13 @@ public:
     HashMap(std::initializer_list<value_type> ilist) noexcept {
         init(static_cast<size_type>(ilist.size()));
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     template <class InputIt> HashMap(InputIt first, InputIt last, size_type bucket_count = 4) noexcept {
         init(static_cast<size_type>(std::distance(first, last)) + bucket_count);
         for (; first != last; ++first)
-            emplace(*first);
+            (void)emplace(*first);
     }
 
     explicit HashMap(const AllocT& alloc) noexcept : _alloc(PairAlloc(alloc)) { init(2, EMH_DEFAULT_LOAD_FACTOR); }
@@ -1025,13 +1028,13 @@ public:
     void insert(std::initializer_list<value_type> ilist) {
         reserve(ilist.size() + _num_filled);
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     template <typename Iter> void insert(Iter first, Iter last) {
         reserve(std::distance(first, last) + _num_filled);
         for (; first != last; ++first)
-            emplace(*first);
+            (void)emplace(*first);
     }
 
     // Returns a pointer to the value if key is at bucket, otherwise nullptr.
@@ -1147,7 +1150,7 @@ public:
     /// return 0 if not erase
     /// Erase an element from the hash table.
     /// return 0 if element was not found
-    [[nodiscard]] size_type erase(const KeyT& key) {
+    size_type erase(const KeyT& key) {
         const auto bucket = erase_key(key);
         if (bucket == INACTIVE)
             return 0;
@@ -1157,7 +1160,7 @@ public:
     }
 
     // iterator erase(const_iterator begin_it, const_iterator end_it)
-    [[nodiscard]] iterator erase(const_iterator cit) {
+    iterator erase(const_iterator cit) {
         const auto bucket = erase_bucket(cit._bucket);
         clear_bucket(bucket);
 
@@ -1171,7 +1174,7 @@ public:
         clear_bucket(bucket);
     }
 
-    template <typename Pred> [[nodiscard]] size_type erase_if(Pred pred) {
+    template <typename Pred> size_type erase_if(Pred pred) {
         auto old_size = size();
         for (auto it = begin(), last = end(); it != last;) {
             if (pred(*it))
@@ -1251,7 +1254,7 @@ public:
     }
 
     /// Make room for this many elements
-    [[nodiscard]] bool reserve(uint64_t num_elems) noexcept {
+    bool reserve(uint64_t num_elems) noexcept {
 #if EMH_HIGH_LOAD < 1000
         const auto required_buckets = (num_elems * _mlf >> 27);
         if (EMH_LIKELY(required_buckets < static_cast<uint64_t>(_mask)))
@@ -1373,8 +1376,8 @@ public:
             char buff[255] = {0};
             snprintf(buff, sizeof(buff),
                      "    _num_filled/aver_size/K.V/pack/collision|last = %u/%.2lf/%s.%s/%zd|%.2lf%%,%.2lf%%",
-                     _num_filled, static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(), typeid(ValueT).name(),
-                     sizeof(_pairs[0]), collision * 100.0 / _num_filled, last * 100.0 / omask);
+                     _num_filled, static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(),
+                     typeid(ValueT).name(), sizeof(_pairs[0]), collision * 100.0 / _num_filled, last * 100.0 / omask);
 #ifdef EMH_LOG
             static uint32_t ihashs = 0;
             EMH_LOG() << "hash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << std::endl;

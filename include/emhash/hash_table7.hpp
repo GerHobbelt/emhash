@@ -293,6 +293,9 @@ class HashMap {
                   "KeyT must be copy-constructible or move-constructible");
     static_assert(std::is_copy_constructible<ValueT>::value || std::is_move_constructible<ValueT>::value,
                   "ValueT must be copy-constructible or move-constructible");
+    static_assert(std::is_invocable_v<HashT, const KeyT&>, "HashT must be callable with const KeyT&");
+    static_assert(std::is_invocable_v<EqT, const KeyT&, const KeyT&>,
+                  "EqT must be callable with (const KeyT&, const KeyT&)");
 
 #ifndef EMH_DEFAULT_LOAD_FACTOR
     constexpr static float EMH_DEFAULT_LOAD_FACTOR = 0.80f;
@@ -518,8 +521,14 @@ public:
 
     HashMap(size_type bucket, float mlf, const AllocT& alloc) noexcept : _alloc(PairAlloc(alloc)) { init(bucket, mlf); }
 
+    // Bitmask size rounded up to EMH_MALIGN boundary (for front layout alignment)
+    static size_t bitmask_aligned_size(uint64_t num_buckets) {
+        const auto raw = (num_buckets + 7) / 8 + BIT_PACK;
+        return (raw + EMH_MALIGN - 1) & ~size_t(EMH_MALIGN - 1);
+    }
+
     static size_t AllocSize(uint64_t num_buckets) {
-        return (num_buckets + EPACK_SIZE) * sizeof(PairT) + (num_buckets + 7) / 8 + BIT_PACK;
+        return bitmask_aligned_size(num_buckets) + (num_buckets + EPACK_SIZE) * sizeof(PairT);
     }
 
     static size_type alloc_count(size_type num_buckets) {
@@ -540,7 +549,10 @@ public:
 
     HashMap(const HashMap& rhs) : _alloc(PairAllocTraits::select_on_container_copy_construction(rhs._alloc)) {
         if (rhs.load_factor() > EMH_MIN_LOAD_FACTOR) {
-            _pairs = alloc_bucket(rhs._num_buckets);
+            auto* base = alloc_bucket(rhs._num_buckets);
+            _bitmask = reinterpret_cast<bit_type*>(base);
+            _pairs =
+                reinterpret_cast<PairT*>(reinterpret_cast<uint8_t*>(base) + bitmask_aligned_size(rhs._num_buckets));
             clone(rhs);
         } else {
             init(rhs._num_filled + 2, rhs.max_load_factor());
@@ -562,13 +574,13 @@ public:
     HashMap(std::initializer_list<value_type> ilist) {
         init(static_cast<size_type>(ilist.size()));
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     template <class InputIt> HashMap(InputIt first, InputIt last, size_type bucket_count = 4) {
         init(static_cast<size_type>(std::distance(first, last)) + bucket_count);
         for (; first != last; ++first)
-            emplace(*first);
+            (void)emplace(*first);
     }
 
     HashMap& operator=(const HashMap& rhs) {
@@ -580,8 +592,10 @@ public:
 
         if (rhs.load_factor() < EMH_MIN_LOAD_FACTOR) {
             clear();
-            dealloc_bucket(_pairs, _num_buckets);
+            dealloc_bucket(reinterpret_cast<PairT*>(_bitmask), _num_buckets);
             _pairs = nullptr;
+            _bitmask = nullptr;
+            _num_buckets = 0;
             rehash(rhs._num_filled + 2);
             for (auto it = rhs.begin(); it != rhs.end(); ++it)
                 static_cast<void>(insert_unique(it->first, it->second));
@@ -592,8 +606,11 @@ public:
             clearkv();
 
         if (_num_buckets != rhs._num_buckets) {
-            dealloc_bucket(_pairs, _num_buckets);
-            _pairs = alloc_bucket(rhs._num_buckets);
+            dealloc_bucket(reinterpret_cast<PairT*>(_bitmask), _num_buckets);
+            auto* base = alloc_bucket(rhs._num_buckets);
+            _bitmask = reinterpret_cast<bit_type*>(base);
+            _pairs =
+                reinterpret_cast<PairT*>(reinterpret_cast<uint8_t*>(base) + bitmask_aligned_size(rhs._num_buckets));
         }
 
         clone(rhs);
@@ -630,7 +647,7 @@ public:
                 it->~value_pair();
             }
         }
-        dealloc_bucket(_pairs, _num_buckets);
+        dealloc_bucket(reinterpret_cast<PairT*>(_bitmask), _num_buckets);
         _pairs = nullptr;
     }
 
@@ -643,11 +660,10 @@ public:
         _mlf = rhs._mlf;
         _num_buckets = rhs._num_buckets;
 
-        _bitmask = decltype(_bitmask)(_pairs + EPACK_SIZE + _num_buckets);
         auto* opairs = rhs._pairs;
 
         if (is_trivially_copyable())
-            memcpy(reinterpret_cast<char*>(_pairs), opairs, AllocSize(_num_buckets));
+            memcpy(reinterpret_cast<char*>(_bitmask), reinterpret_cast<char*>(rhs._bitmask), AllocSize(_num_buckets));
         else {
             // For non-trivially-copyable types, only init bucket field of tail sentinels
             // (memcpy of whole PairT would read uninitialized key — MSan UB).
@@ -1076,7 +1092,7 @@ public:
     void insert(std::initializer_list<value_type> ilist) {
         reserve(ilist.size() + _num_filled);
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     template <typename Iter> void insert(Iter first, Iter last) {
@@ -1162,7 +1178,7 @@ public:
     // -------------------------------------------------------
     /// Erase an element from the hash table.
     /// return 0 if element was not found
-    template <typename Key = KeyT> [[nodiscard]] size_type erase(const Key& key) {
+    template <typename Key = KeyT> size_type erase(const Key& key) {
         const auto bucket = erase_key(key);
         if (bucket == INACTIVE)
             return 0;
@@ -1172,14 +1188,14 @@ public:
     }
 
     // iterator erase const_iterator
-    [[nodiscard]] iterator erase(const_iterator cit) {
+    iterator erase(const_iterator cit) {
         iterator it(cit);
         return erase(it);
     }
 
     /// Erase an element typedef an iterator.
     /// Returns an iterator to the next element (or end()).
-    [[nodiscard]] iterator erase(iterator it) {
+    iterator erase(iterator it) {
         // Ensure _bmask is initialized before we modify _bitmask.
         // If _from == -1 (lazy init), ++it would trigger init() AFTER
         // clear_bucket() — loading _bmask from the already-updated
@@ -1207,7 +1223,7 @@ public:
         clear_bucket(bucket);
     }
 
-    template <typename Pred> [[nodiscard]] size_type erase_if(Pred pred) {
+    template <typename Pred> size_type erase_if(Pred pred) {
         auto old_size = size();
         for (auto it = begin(), last = end(); it != last;) {
             if (pred(*it))
@@ -1261,7 +1277,7 @@ public:
     void shrink_to_fit() noexcept { rehash(_num_filled + 1); }
 
     /// Make room for this many elements
-    [[nodiscard]] bool reserve(uint64_t num_elems) noexcept {
+    bool reserve(uint64_t num_elems) noexcept {
         const auto required_buckets = (num_elems * _mlf >> 28);
         if (EMH_LIKELY(required_buckets < _num_buckets))
             return false;
@@ -1300,7 +1316,9 @@ public:
         _num_buckets = num_buckets;
         _mask = num_buckets - 1;
 
-        _pairs = alloc_bucket(_num_buckets);
+        auto* _alloc_base = alloc_bucket(_num_buckets);
+        _bitmask = reinterpret_cast<bit_type*>(_alloc_base);
+        _pairs = reinterpret_cast<PairT*>(reinterpret_cast<uint8_t*>(_alloc_base) + bitmask_aligned_size(_num_buckets));
         if (is_trivially_copyable()) {
             memset(reinterpret_cast<char*>(_pairs + _num_buckets), 0, sizeof(PairT) * EPACK_SIZE);
         } else {
@@ -1309,8 +1327,6 @@ public:
             for (size_type i = 0; i < EPACK_SIZE; ++i)
                 std::memcpy(&EMH_BUCKET(_pairs, _num_buckets + i), &zero_bucket, sizeof(zero_bucket));
         }
-
-        _bitmask = decltype(_bitmask)(_pairs + EPACK_SIZE + num_buckets);
 
         const auto mask_byte = (num_buckets + 7) / 8;
         memset(_bitmask, static_cast<unsigned char>(0xFF), mask_byte);
@@ -1348,7 +1364,7 @@ public:
         }
 #endif
 
-        dealloc_bucket(old_pairs, old_num_buckets);
+        dealloc_bucket(reinterpret_cast<PairT*>(obmask), old_num_buckets);
         assert(old_num_filled == _num_filled);
     }
 

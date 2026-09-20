@@ -39,8 +39,8 @@
 #elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) ||       \
     defined(_M_X64)
 #include <x86intrin.h>
-#elif defined(__ARM_ARCH) || defined(__aarch64__) || defined(__arm__)
-#include "sse2neon.h"
+#elif defined(__ARM_ARCH__) || defined(__aarch64__) || defined(__arm__)
+#include <sse2neon.h>
 #endif
 
 #undef EMH_LIKELY
@@ -333,12 +333,7 @@ public:
 
     HashSet(const HashSet& other) { clone(other); }
 
-    HashSet(HashSet&& other) {
-        rehash(1);
-        if (this != &other) {
-            swap(other);
-        }
-    }
+    HashSet(HashSet&& other) noexcept { swap(other); }
 
     HashSet(std::initializer_list<value_type> il) {
         rehash(static_cast<size_t>(il.size()));
@@ -387,7 +382,8 @@ public:
         }
 
         if (is_trivially_copyable()) {
-            memcpy(reinterpret_cast<char*>(_pairs), reinterpret_cast<const char*>(other._pairs), (_num_buckets + 1) * sizeof(_pairs[0]));
+            memcpy(reinterpret_cast<char*>(_pairs), reinterpret_cast<const char*>(other._pairs),
+                   (_num_buckets + 1) * sizeof(_pairs[0]));
         } else {
             for (auto it = other.cbegin(); it.bucket() != _num_buckets; ++it)
                 new (_pairs + it.bucket()) PairT(*it);
@@ -434,7 +430,9 @@ public:
     size_t bucket_count() const noexcept { return _num_buckets; }
 
     /// Returns average number of elements per bucket.
-    float load_factor() const noexcept { return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(_num_buckets) : 0.0f; }
+    float load_factor() const noexcept {
+        return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(_num_buckets) : 0.0f;
+    }
 
     inline constexpr float max_load_factor() const { return EMH_MAX_LOAD_FACTOR; }
     inline constexpr float min_load_factor() const { return EMH_MIN_LOAD_FACTOR; }
@@ -462,6 +460,16 @@ public:
         return find_filled_bucket(key) != _num_buckets;
     }
 
+    template <typename K = KeyT> KeyT* try_get(const K& key) noexcept {
+        auto bucket = find_filled_bucket(key);
+        return bucket == _num_buckets ? nullptr : &_pairs[bucket];
+    }
+
+    template <typename K = KeyT> const KeyT* try_get(const K& key) const noexcept {
+        auto bucket = find_filled_bucket(key);
+        return bucket == _num_buckets ? nullptr : &_pairs[bucket];
+    }
+
     template <typename Con> bool operator==(const Con& rhs) const noexcept {
         if (size() != rhs.size())
             return false;
@@ -477,6 +485,8 @@ public:
     template <typename Con> bool operator!=(const Con& rhs) const { return !(*this == rhs); }
 
     void merge(HashSet& rhs) noexcept {
+        if (this == &rhs)
+            return;
         if (empty()) {
             *this = std::move(rhs);
             return;
@@ -546,7 +556,7 @@ public:
     void insert(std::initializer_list<value_type> ilist) noexcept {
         rehash(static_cast<size_t>(ilist.size()) + _num_filled);
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     template <typename K> size_t insert_unique(K&& key) noexcept {
@@ -930,7 +940,7 @@ private:
     }
 
     size_t find_filled_slot(size_t next_bucket) const noexcept {
-        if (EMH_UNLIKELY(_num_filled) == 0)
+        if (EMH_UNLIKELY(_num_filled == 0))
             return _num_buckets;
         // next_bucket -= next_bucket % simd_bytes;
         while (true) {

@@ -40,7 +40,8 @@ TEST_CASE_TEMPLATE("set insert + find + contains + count", Set, AllIntSets) {
 
 TEST_CASE_TEMPLATE("set erase by key and iterator", Set, AllIntSets) {
     Set s;
-    for (int i = 0; i < 10; ++i) s.insert(i);
+    for (int i = 0; i < 10; ++i)
+        s.insert(i);
     CHECK(s.size() == 10);
 
     CHECK(s.erase(5) == 1);
@@ -69,23 +70,29 @@ TEST_CASE_TEMPLATE("set emplace returns pair", Set, AllIntSets) {
 // ============================================================================
 TEST_CASE_TEMPLATE("set iteration visits all keys", Set, AllIntSets) {
     Set s;
-    for (int i = 0; i < 100; ++i) s.insert(i);
+    for (int i = 0; i < 100; ++i)
+        s.insert(i);
 
     int count = 0;
     std::vector<bool> found(100, false);
     for (auto key : s) {
-        if (key >= 0 && key < 100) found[key] = true;
+        if (key >= 0 && key < 100)
+            found[key] = true;
         ++count;
     }
     CHECK(count == 100);
-    for (int i = 0; i < 100; ++i) CHECK(found[i]);
+    for (int i = 0; i < 100; ++i)
+        CHECK(found[i]);
 }
 
 TEST_CASE_TEMPLATE("set empty iteration begin==end", Set, AllIntSets) {
     Set s;
     CHECK(s.begin() == s.end());
     int count = 0;
-    for (auto k : s) { (void)k; ++count; }
+    for (auto k : s) {
+        (void)k;
+        ++count;
+    }
     CHECK(count == 0);
 }
 
@@ -94,7 +101,8 @@ TEST_CASE_TEMPLATE("set empty iteration begin==end", Set, AllIntSets) {
 // ============================================================================
 TEST_CASE_TEMPLATE("set copy ctor and assign", Set, AllIntSets) {
     Set s;
-    for (int i = 0; i < 50; ++i) s.insert(i);
+    for (int i = 0; i < 50; ++i)
+        s.insert(i);
 
     Set s2(s);
     CHECK(s2.size() == 50);
@@ -113,7 +121,8 @@ TEST_CASE_TEMPLATE("set copy ctor and assign", Set, AllIntSets) {
 
 TEST_CASE_TEMPLATE("set move ctor and assign", Set, AllIntSets) {
     Set s;
-    for (int i = 0; i < 50; ++i) s.insert(i);
+    for (int i = 0; i < 50; ++i)
+        s.insert(i);
 
     Set s2(std::move(s));
     CHECK(s2.size() == 50);
@@ -128,8 +137,10 @@ TEST_CASE_TEMPLATE("set move ctor and assign", Set, AllIntSets) {
 TEST_CASE_TEMPLATE("set swap", Set, AllIntSets) {
     Set a;
     Set b;
-    for (int i = 0; i < 10; ++i) a.insert(i);
-    for (int i = 100; i < 110; ++i) b.insert(i);
+    for (int i = 0; i < 10; ++i)
+        a.insert(i);
+    for (int i = 100; i < 110; ++i)
+        b.insert(i);
 
     a.swap(b);
     CHECK(a.size() == 10);
@@ -145,14 +156,16 @@ TEST_CASE_TEMPLATE("set reserve and clear", Set, AllIntSets) {
     Set s;
     s.reserve(500);
 
-    for (int i = 0; i < 200; ++i) s.insert(i);
+    for (int i = 0; i < 200; ++i)
+        s.insert(i);
     CHECK(s.size() == 200);
 
     s.clear();
     CHECK(s.empty());
 
     // Reuse after clear
-    for (int i = 0; i < 50; ++i) s.insert(i + 1000);
+    for (int i = 0; i < 50; ++i)
+        s.insert(i + 1000);
     CHECK(s.size() == 50);
     CHECK(s.contains(1049));
 }
@@ -160,15 +173,15 @@ TEST_CASE_TEMPLATE("set reserve and clear", Set, AllIntSets) {
 TEST_CASE_TEMPLATE("set load factor and bucket count", Set, AllIntSets) {
     Set s;
     s.reserve(100);
-    for (int i = 0; i < 80; ++i) s.insert(i);
+    for (int i = 0; i < 80; ++i)
+        s.insert(i);
 
     CHECK(s.bucket_count() > 0);
-    float lf = s.load_factor();
-    CHECK(lf >= 0.0F);
-    CHECK(lf < 1.0F);
     float max_lf = s.max_load_factor();
     CHECK(max_lf > 0.0F);
-    (void)lf; (void)max_lf;
+    float lf = s.load_factor();
+    CHECK(lf > 0.0F);
+    CHECK(lf <= max_lf);
 }
 
 // ============================================================================
@@ -189,62 +202,117 @@ TEST_CASE_TEMPLATE("set insert_unique", Set, AllIntSets) {
 TEST_CASE_TEMPLATE("set merge", Set, AllIntSets) {
     Set a;
     Set b;
-    for (int i = 0; i < 20; ++i) a.insert(i);
-    for (int i = 10; i < 30; ++i) b.insert(i);
+    for (int i = 0; i < 20; ++i)
+        a.insert(i);
+    for (int i = 10; i < 30; ++i)
+        b.insert(i);
 
     a.merge(b);
     // a should now contain 0..29
     CHECK(a.size() == 30);
-    for (int i = 0; i < 30; ++i) CHECK(a.contains(i));
+    for (int i = 0; i < 30; ++i)
+        CHECK(a.contains(i));
 }
 
 TEST_CASE_TEMPLATE("set merge empty dst", Set, AllIntSets) {
     // Coverage: merge on empty set triggers *this = std::move(rhs)
-    Set a;  // empty
+    Set a; // empty
     Set b;
-    for (int i = 0; i < 20; ++i) b.insert(i);
+    for (int i = 0; i < 20; ++i)
+        b.insert(i);
     CHECK(a.empty());
     CHECK(b.size() == 20);
 
     a.merge(b);
     CHECK(a.size() == 20);
-    CHECK(b.empty());  // b was moved
-    for (int i = 0; i < 20; ++i) CHECK(a.contains(i));
+    CHECK(b.empty()); // b was moved
+    for (int i = 0; i < 20; ++i)
+        CHECK(a.contains(i));
 }
 
 TEST_CASE_TEMPLATE("set copy from empty", Set, AllIntSets) {
     // Coverage: copy/clone from empty source triggers clear() or equivalent
     Set a;
-    for (int i = 0; i < 10; ++i) a.insert(i);
+    for (int i = 0; i < 10; ++i)
+        a.insert(i);
     CHECK(a.size() == 10);
 
-    Set b;  // empty
-    a = b;  // copy from empty
+    Set b; // empty
+    a = b; // copy from empty
     CHECK(a.empty());
     CHECK(b.empty());
 }
 
 TEST_CASE_TEMPLATE("set erase_if", Set, AllIntSets) {
     Set s;
-    for (int i = 0; i < 100; ++i) s.insert(i);
+    for (int i = 0; i < 100; ++i)
+        s.insert(i);
 
     auto erased = s.erase_if([](int v) { return v % 2 == 0; });
     CHECK(erased == 50);
     CHECK(s.size() == 50);
     for (int i = 0; i < 100; ++i) {
-        if (i % 2 == 0) CHECK(!s.contains(i));
-        else CHECK(s.contains(i));
+        if (i % 2 == 0)
+            CHECK(!s.contains(i));
+        else
+            CHECK(s.contains(i));
     }
+}
+
+// try_get is only available on emilib sets (emhash sets lack this API)
+#define TryGetIntSets iset2<int>, iset3<int>
+
+TEST_CASE_TEMPLATE("set try_get returns pointer or nullptr", Set, TryGetIntSets) {
+    Set s;
+    s.insert(1);
+    s.insert(2);
+    s.insert(3);
+
+    // existing key -> pointer to key
+    auto* p = s.try_get(1);
+    REQUIRE(p != nullptr);
+    CHECK(*p == 1);
+
+    // missing key -> nullptr
+    auto* p2 = s.try_get(999);
+    CHECK(p2 == nullptr);
+
+    // const version
+    const auto& cs = s;
+    const auto* cp = cs.try_get(2);
+    REQUIRE(cp != nullptr);
+    CHECK(*cp == 2);
+
+    const auto* cp2 = cs.try_get(999);
+    CHECK(cp2 == nullptr);
+}
+
+#define TryGetStringSets iset2<std::string>, iset3<std::string>
+
+TEST_CASE_TEMPLATE("set try_get with string keys", Set, TryGetStringSets) {
+    Set s;
+    s.insert("hello");
+    s.insert("world");
+
+    auto* p = s.try_get("hello");
+    REQUIRE(p != nullptr);
+    CHECK(*p == "hello");
+
+    auto* p2 = s.try_get("nonexistent");
+    CHECK(p2 == nullptr);
 }
 
 TEST_CASE_TEMPLATE("set shrink_to_fit", Set, AllIntSets) {
     Set s;
-    for (int i = 0; i < 1000; ++i) s.insert(i);
-    for (int i = 0; i < 900; ++i) s.erase(i);
+    for (int i = 0; i < 1000; ++i)
+        s.insert(i);
+    for (int i = 0; i < 900; ++i)
+        s.erase(i);
 
     auto bc_before = s.bucket_count();
     s.shrink_to_fit();
     CHECK(s.bucket_count() <= bc_before);
     CHECK(s.size() == 100);
-    for (int i = 900; i < 1000; ++i) CHECK(s.contains(i));
+    for (int i = 900; i < 1000; ++i)
+        CHECK(s.contains(i));
 }

@@ -67,6 +67,18 @@ cp include/emhash/hash_table7.hpp /your/project/emhash/
 # Option B: Clone and include
 git clone https://github.com/ktprime/emhash.git
 # Then add -I/path/to/emhash/include to your compiler flags
+
+# Option C: CMake FetchContent (no install needed)
+# Add to your CMakeLists.txt:
+#   include(FetchContent)
+#   FetchContent_Declare(emhash GIT_REPOSITORY https://github.com/ktprime/emhash.git GIT_TAG v1.1.0)
+#   FetchContent_MakeAvailable(emhash)
+#   target_link_libraries(your_target PRIVATE emhash::emhash)
+
+# Option D: CMake find_package (after install)
+# cmake -B build -DCMAKE_PREFIX_PATH=/path/to/emhash-install
+# In CMakeLists.txt: find_package(emhash REQUIRED CONFIG)
+#   target_link_libraries(your_target PRIVATE emhash::emhash)
 ```
 
 ```cpp
@@ -142,6 +154,25 @@ More examples: [docs/examples/](docs/examples/)
 
 ## Version Selection Guide
 
+### 30-Second Quick Guide
+
+> **If you're not sure which version to use, start with `emhash7`** — it has the best all-around performance with no tombstones and native high load factor support.
+
+Use this decision tree to pick the right version:
+
+```
+你的 key 是整数吗？
+  ├─ 是 → 追求极致性能？
+  │     ├─ 是 → emhash7 (高负载因子，无墓碑)
+  │     └─ 否 → emhash5 (内存高效，低探测)
+  │
+  └─ 否 → 编译器支持 SIMD 指令集？
+         ├─ 是 → emilib2 (SIMD 加速查找，最快)
+         └─ 否 → emhash8 (通用，快速迭代)
+```
+
+### Detailed Comparison
+
 | Version | Best For | Key Strengths | Weaknesses |
 |---------|----------|---------------|------------|
 | **emhash5** | Integer keys, fast lookup | Small-size optimization (`EMH_SMALL_SIZE`), lowest probe count | Slightly slower than emhash6 for high LF |
@@ -149,6 +180,22 @@ More examples: [docs/examples/](docs/examples/)
 | **emhash7** | Insert-heavy, mixed workloads | No tombstones, stable insert/erase, high load factor | Slightly slower erase than emhash5/6 |
 | **emhash8** | Iteration-heavy, large KV types | Dense pairs array, near-zero iteration time | Higher memory for separate index array |
 | **emilib1/2/3** | Swiss-table style SIMD-accelerated lookup | Group-level SIMD probing, very fast find | Higher memory overhead per bucket; **emilib2ss may hang under extreme hash collision attack** (all keys hashing to same bucket) — use emilib2o or emilib2s in such scenarios |
+
+### Feature Matrix
+
+| Feature | emhash5 | emhash6 | emhash7 | emhash8 | emilib1/2/3 |
+|---------|---------|---------|---------|---------|-------------|
+| Integer keys | ✅ | ✅ | ✅ | ✅ | ✅ |
+| String keys | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Custom types | ✅ | ✅ | ✅ | ✅ | ✅ |
+| High load factor (0.9+) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `try_get` | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `try_set` | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `set_get` | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `shrink_to_fit` | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Custom allocator | ✅ | ✅ | ✅ | ✅ | ❌ |
+| SIMD acceleration | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Fastest iteration | ❌ | ❌ | ❌ | ✅ | ❌ |
 
 See [Performance Overview](docs/performance.md) for detailed benchmark numbers.
 

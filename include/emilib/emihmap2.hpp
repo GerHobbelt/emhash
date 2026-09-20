@@ -40,7 +40,7 @@
 #elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) ||       \
     defined(_M_X64)
 #include <x86intrin.h>
-#elif defined(__ARM_ARCH) || defined(__aarch64__) || defined(__arm__)
+#elif defined(__ARM_ARCH__) || defined(__aarch64__) || defined(__arm__)
 #include <sse2neon.h>
 #endif
 
@@ -349,12 +349,7 @@ public:
         clone(other);
     }
 
-    HashMap(HashMap&& other) {
-        rehash(1);
-        if (this != &other) {
-            swap(other);
-        }
-    }
+    HashMap(HashMap&& other) noexcept { swap(other); }
 
     HashMap(std::initializer_list<value_type> il) {
         rehash(static_cast<size_t>(il.size()));
@@ -450,7 +445,9 @@ public:
     size_t bucket_count() const noexcept { return _num_buckets; }
 
     /// Returns average number of elements per bucket.
-    float load_factor() const noexcept { return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(_num_buckets) : 0.0f; }
+    float load_factor() const noexcept {
+        return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(_num_buckets) : 0.0f;
+    }
 
     inline constexpr float max_load_factor() const { return EMH_MAX_LOAD_FACTOR; }
     inline constexpr float min_load_factor() const { return EMH_MIN_LOAD_FACTOR; }
@@ -492,14 +489,34 @@ public:
         return _pairs[bucket].second;
     }
 
-    template <typename K> ValueT* try_get(const K& key) noexcept {
+    template <typename K = KeyT> ValueT* try_get(const K& key) noexcept {
         auto bucket = find_filled_bucket(key);
         return bucket == _num_buckets ? nullptr : &_pairs[bucket].second;
     }
 
-    template <typename K> ValueT* try_get(const K& key) const noexcept {
+    template <typename K = KeyT> const ValueT* try_get(const K& key) const noexcept {
         auto bucket = find_filled_bucket(key);
         return bucket == _num_buckets ? nullptr : &_pairs[bucket].second;
+    }
+
+    /// set value if key exists
+    template <typename K = KeyT>
+    bool try_set(const K& key, const ValueT& val) noexcept(std::is_nothrow_copy_assignable<ValueT>::value) {
+        const auto bucket = find_filled_bucket(key);
+        if (bucket == _num_buckets)
+            return false;
+        _pairs[bucket].second = val;
+        return true;
+    }
+
+    /// set value if key exists (move)
+    template <typename K = KeyT>
+    bool try_set(const K& key, ValueT&& val) noexcept(std::is_nothrow_move_assignable<ValueT>::value) {
+        const auto bucket = find_filled_bucket(key);
+        if (bucket == _num_buckets)
+            return false;
+        _pairs[bucket].second = std::move(val);
+        return true;
     }
 
     template <typename Con> bool operator==(const Con& rhs) const noexcept {
@@ -517,6 +534,8 @@ public:
     template <typename Con> bool operator!=(const Con& rhs) const noexcept { return !(*this == rhs); }
 
     void merge(HashMap& rhs) noexcept {
+        if (this == &rhs)
+            return;
         if (empty()) {
             *this = std::move(rhs);
             return;
@@ -604,7 +623,7 @@ public:
     void insert(std::initializer_list<value_type> ilist) noexcept {
         rehash(static_cast<size_t>(ilist.size()) + _num_filled);
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     template <typename K, typename V> size_t insert_unique(K&& key, V&& val) noexcept {

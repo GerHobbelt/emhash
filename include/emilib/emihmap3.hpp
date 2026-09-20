@@ -40,7 +40,7 @@
 #elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) ||       \
     defined(_M_X64)
 #include <x86intrin.h>
-#elif defined(__ARM_ARCH) || defined(__aarch64__) || defined(__arm__)
+#elif defined(__ARM_ARCH__) || defined(__aarch64__) || defined(__arm__)
 #include <sse2neon.h>
 #endif
 
@@ -57,6 +57,15 @@
 #else
 #define EMH_LIKELY(condition) (condition)
 #define EMH_UNLIKELY(condition) (condition)
+#endif
+
+// pointer restrict qualifier: _states/_pairs never alias each other
+#if defined(__GNUC__) || defined(__clang__)
+#define EMH_RESTRICT __restrict__
+#elif defined(_MSC_VER)
+#define EMH_RESTRICT __restrict
+#else
+#define EMH_RESTRICT
 #endif
 
 namespace emilib3 {
@@ -341,12 +350,7 @@ public:
         clone(other);
     }
 
-    HashMap(HashMap&& other) {
-        rehash(1);
-        if (this != &other) {
-            swap(other);
-        }
-    }
+    HashMap(HashMap&& other) noexcept { swap(other); }
 
     HashMap(std::initializer_list<value_type> il) {
         rehash(static_cast<size_t>(il.size()));
@@ -395,7 +399,8 @@ public:
         }
 
         if (is_trivially_copyable()) {
-            memcpy(reinterpret_cast<char*>(_pairs), reinterpret_cast<const char*>(other._pairs), (_num_buckets + 1) * sizeof(_pairs[0]));
+            memcpy(reinterpret_cast<char*>(_pairs), reinterpret_cast<const char*>(other._pairs),
+                   (_num_buckets + 1) * sizeof(_pairs[0]));
         } else {
             for (auto it = other.cbegin(); it.bucket() != _num_buckets; ++it)
                 new (_pairs + it.bucket()) PairT(*it);
@@ -442,7 +447,9 @@ public:
     size_t bucket_count() const noexcept { return _num_buckets; }
 
     /// Returns average number of elements per bucket.
-    float load_factor() const noexcept { return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(_num_buckets) : 0.0f; }
+    float load_factor() const noexcept {
+        return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(_num_buckets) : 0.0f;
+    }
 
     inline constexpr float max_load_factor() const { return EMH_MAX_LOAD_FACTOR; }
     inline constexpr float min_load_factor() const { return EMH_MIN_LOAD_FACTOR; }
@@ -484,14 +491,34 @@ public:
         return _pairs[bucket].second;
     }
 
-    template <typename K> ValueT* try_get(const K& key) noexcept {
+    template <typename K = KeyT> ValueT* try_get(const K& key) noexcept {
         auto bucket = find_filled_bucket(key);
         return bucket == _num_buckets ? nullptr : &_pairs[bucket].second;
     }
 
-    template <typename K> ValueT* try_get(const K& key) const noexcept {
+    template <typename K = KeyT> const ValueT* try_get(const K& key) const noexcept {
         auto bucket = find_filled_bucket(key);
         return bucket == _num_buckets ? nullptr : &_pairs[bucket].second;
+    }
+
+    /// set value if key exists
+    template <typename K = KeyT>
+    bool try_set(const K& key, const ValueT& val) noexcept(std::is_nothrow_copy_assignable<ValueT>::value) {
+        const auto bucket = find_filled_bucket(key);
+        if (bucket == _num_buckets)
+            return false;
+        _pairs[bucket].second = val;
+        return true;
+    }
+
+    /// set value if key exists (move)
+    template <typename K = KeyT>
+    bool try_set(const K& key, ValueT&& val) noexcept(std::is_nothrow_move_assignable<ValueT>::value) {
+        const auto bucket = find_filled_bucket(key);
+        if (bucket == _num_buckets)
+            return false;
+        _pairs[bucket].second = std::move(val);
+        return true;
     }
 
     template <typename Con> bool operator==(const Con& rhs) const noexcept {
@@ -509,6 +536,8 @@ public:
     template <typename Con> bool operator!=(const Con& rhs) const noexcept { return !(*this == rhs); }
 
     void merge(HashMap& rhs) noexcept {
+        if (this == &rhs)
+            return;
         if (empty()) {
             *this = std::move(rhs);
             return;
@@ -594,7 +623,7 @@ public:
     void insert(std::initializer_list<value_type> ilist) noexcept {
         rehash(static_cast<size_t>(ilist.size()) + _num_filled);
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
-            do_insert(*it);
+            (void)do_insert(*it);
     }
 
     template <typename K, typename V> size_t insert_unique(K&& key, V&& val) noexcept {
@@ -901,18 +930,8 @@ private:
 
     inline void set_offset(size_t offset) noexcept { _max_probe_length = offset; }
 
-    inline size_t get_next_bucket(size_t next_bucket, size_t offset) const noexcept {
-#if EMH_PSL_LINEAR == 0
-        if (offset < 7) // || _num_buckets < 32 * simd_bytes)
-            next_bucket += simd_bytes * offset;
-        else
-            next_bucket += ((_num_buckets / 8 / simd_bytes) | 1) * simd_bytes;
-#else
-        next_bucket += 3 * simd_bytes;
-        if (next_bucket >= _num_buckets)
-            next_bucket += simd_bytes;
-#endif
-        return next_bucket & _mask;
+    inline size_t get_next_bucket(size_t next_bucket, size_t /*offset*/) const noexcept {
+        return (next_bucket + simd_bytes) & _mask;
     }
 
     // Find the bucket with this key, or return (size_t)-1
@@ -935,7 +954,8 @@ private:
                 } while (maskf &= maskf - 1);
             }
 
-            if (group_mask(next_bucket) == State::EEMPTY)
+            const auto maske = static_cast<size_t>(MOVEMASK_EPI8(CMPEQ_EPI8(vec, simd_empty)));
+            if (maske)
                 return _num_buckets;
             if (offset >= _max_probe_length)
                 return _num_buckets;
@@ -977,14 +997,18 @@ private:
 #endif
 
             if (hole == chole) {
-                // 2. find empty
-                const auto maskd = static_cast<size_t>(MOVEMASK_EPI8(CMPGT_EPI8(simd_filled, vec)));
-                if (group_mask(next_bucket) == State::EEMPTY) {
-                    hole = next_bucket + CTZ(maskd);
-                    set_states(hole, key_h2);
-                    return hole;
-                } else if (maskd != 0) {
-                    hole = next_bucket + CTZ(maskd);
+                // 2. find the first empty-or-deleted slot
+                const auto maskhole = static_cast<size_t>(MOVEMASK_EPI8(CMPGT_EPI8(simd_filled, vec)));
+                if (maskhole) {
+                    // if the group contains an empty slot we can stop here,
+                    // otherwise remember the first tombstone and keep probing
+                    const auto maske = static_cast<size_t>(MOVEMASK_EPI8(CMPEQ_EPI8(vec, simd_empty)));
+                    if (maske) {
+                        const auto hbucket = next_bucket + CTZ(maskhole);
+                        set_states(hbucket, key_h2);
+                        return hbucket;
+                    }
+                    hole = next_bucket + CTZ(maskhole);
                 }
             }
 
@@ -1032,7 +1056,7 @@ private:
     }
 
     size_t find_filled_slot(size_t next_bucket) const noexcept {
-        if (EMH_UNLIKELY(_num_filled) == 0)
+        if (EMH_UNLIKELY(_num_filled == 0))
             return _num_buckets;
         // next_bucket -= next_bucket % simd_bytes;
         while (true) {
@@ -1047,8 +1071,8 @@ private:
 private:
     HashT _hasher;
     EqT _eq;
-    int8_t* _states = nullptr;
-    PairT* _pairs = nullptr;
+    int8_t* EMH_RESTRICT _states = nullptr;
+    PairT* EMH_RESTRICT _pairs = nullptr;
     size_t _num_buckets = 0;
     size_t _mask = 0;
     size_t _num_filled = 0;
@@ -1057,3 +1081,5 @@ private:
 };
 
 } // namespace emilib3
+
+#undef EMH_RESTRICT
