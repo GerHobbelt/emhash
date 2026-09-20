@@ -1,14 +1,17 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(emhash)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" EMHASH_VERSION LIMIT_COUNT 1)
+project(emhash VERSION ${EMHASH_VERSION} LANGUAGES CXX)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(WITH_BENCHMARKS "Build benchmarks." ON)
+option(WITH_EXAMPLES "Build examples." ON)
 
 message("------------ Options -------------")
 message("  CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
@@ -19,21 +22,21 @@ message("  CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_
 add_library(emhash INTERFACE)
 
 set(EMHASH_HEADERS
-    hash_set2.hpp
-    hash_set3.hpp
-    hash_set4.hpp
-    hash_set8.hpp
-    hash_table5.hpp
-    hash_table6.hpp
-    hash_table7.hpp
-    hash_table8.hpp
+    include/emhash/hash_set2.hpp
+    include/emhash/hash_set3.hpp
+    include/emhash/hash_set4.hpp
+    include/emhash/hash_set8.hpp
+    include/emhash/hash_table5.hpp
+    include/emhash/hash_table6.hpp
+    include/emhash/hash_table7.hpp
+    include/emhash/hash_table8.hpp
 )
 
 set_target_properties(emhash PROPERTIES PUBLIC_HEADER "${EMHASH_HEADERS}")
 
 target_include_directories(
      emhash INTERFACE
-     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}}>
+     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
      $<INSTALL_INTERFACE:include>
 )
 
@@ -42,13 +45,19 @@ include(CMakePackageConfigHelpers)
 
 install(TARGETS emhash
     EXPORT emhash-targets
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/emhash
 )
 
 install(EXPORT emhash-targets
         FILE emhashTargets.cmake
         NAMESPACE emhash::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/emhash
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/emhashConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
 )
 
 configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/config.cmake.in
@@ -58,11 +67,12 @@ configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/config.cmake.in
 
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/emhashConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/emhashConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/emhash
 )
 
 if(WITH_BENCHMARKS)
-    include_directories(${PROJECT_SOURCE_DIR})
+    include_directories(${PROJECT_SOURCE_DIR}/include)
     include_directories(${PROJECT_SOURCE_DIR}/thirdparty)
     include_directories(${PROJECT_SOURCE_DIR}/bench)
     add_definitions(-DHAVE_BOOST=1 -DABSL_HAMP=1 -DEMH_PSL=16)# -DET=1)
@@ -85,6 +95,7 @@ if(WITH_BENCHMARKS)
     add_executable(ebench ${PROJECT_SOURCE_DIR}/bench/ebench.cpp)
     add_executable(sbench ${PROJECT_SOURCE_DIR}/bench/sbench.cpp)
     add_executable(mbench ${PROJECT_SOURCE_DIR}/bench/martin_bench.cpp)
+    add_executable(cbench ${PROJECT_SOURCE_DIR}/bench/comprehensive_bench.cpp)
     add_executable(bs ${PROJECT_SOURCE_DIR}/bench/bstring.cpp)
     add_executable(bi ${PROJECT_SOURCE_DIR}/bench/buint64.cpp)
     add_executable(fbench ${PROJECT_SOURCE_DIR}/bench/fbench.cpp)
@@ -99,5 +110,9 @@ if(WITH_BENCHMARKS)
     #target_link_libraries(mbench PRIVATE Threads::Threads)
     #target_link_libraries(hbench PRIVATE Threads::Threads)
     #target_link_libraries(fbench PRIVATE Threads::Threads)
+endif()
+
+if(WITH_EXAMPLES)
+    add_subdirectory(examples)
 endif()
 

@@ -111,15 +111,15 @@ std::map<std::string, std::string> maps =
 //#define EMH_PACK_TAIL         8
 //#define EMH_ITER_SAFE       1
 //#define EMH_ALIGN64         1
-//#define EMH_FIND_HIT        1
+#define EMH_FIND_HIT        1
 //#define EMH_SMALL_SIZE        12345
 //#define EMH_SMALL_SIZE      8
 
-#include "../hash_table6.hpp"
-#include "../hash_table7.hpp"
-#include "../hash_table8.hpp"
+#include "emhash/hash_table6.hpp"
+#include "emhash/hash_table7.hpp"
+#include "emhash/hash_table8.hpp"
 //#define EMH_HIGH_LOAD 12345
-#include "../hash_table5.hpp"
+#include "emhash/hash_table5.hpp"
 
 #include "emilib/emilib2ss.hpp"
 #include "emilib/emilib2o.hpp"
@@ -1609,11 +1609,36 @@ static int test_lru(int n)
     return 0;
 }
 
+int TestFindHit()
+{
+    // key = -1 �� INACTIVE ֵ (0xFFFFFFFF)
+    int32_t bad_key = (int32_t)0xFFFFFFFF; // -1
+
+    emhash5::HashMap<int32_t, int32_t> map(16);
+
+    // �� find(key, hash) ָ�� hash ӳ�䵽�� sanitized �Ŀ�Ͱ
+    // hash=0 �� main_bucket=0����Ͱδ�� reset_bucket �޸�
+    auto it = map.find(bad_key, 0);
+
+    if (it != map.end()) {
+        printf("BUG: find(%d, hash=0) returned a result in an EMPTY map!\n", bad_key);
+        printf("     bucket=%d, key=%d, value=%d\n", (int)it.bucket(), it->first, it->second);
+        return 1;
+    }
+    else {
+        printf("OK: no false positive\n");
+        return 0;
+    }
+}
+
 int main(int argc, char* argv[])
 {
 #if WYHASH_LITTLE_ENDIAN && STR_VIEW
     //find_test();
 #endif
+
+    TestFindHit();
+
     auto start = getus();
 //    test_lru(100'000'000);
 //    testHashInt(int(1e8));
@@ -1810,3 +1835,5 @@ int main(int argc, char* argv[])
 //https://www.cnblogs.com/dengn/p/16146722.html#MatrixOne%E6%95%B0%E6%8D%AE%E5%BA%93%E6%98%AF%E4%BB%80%E4%B9%88?
 //https://www.mdpi.com/2076-3417/10/6/1915
 //https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2
+
+//https://jacksonallan.github.io/c_cpp_hash_tables_benchmark/
