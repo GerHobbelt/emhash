@@ -618,9 +618,9 @@ public:
         return _pairs[slot].second;
     }
 
-    const ValueT& index(const uint32_t index) const noexcept { return _pairs[index].second; }
+    const ValueT& index(const uint32_t slot) const noexcept { return _pairs[slot].second; }
 
-    ValueT& index(const uint32_t index) noexcept { return _pairs[index].second; }
+    ValueT& index(const uint32_t slot) noexcept { return _pairs[slot].second; }
 
     /// @brief Check if a key exists in the map.
     /// @param key The key to search for.
@@ -797,10 +797,15 @@ public:
     /// @param key The key to insert.
     /// @param val The value to insert.
     /// @return The bucket index where the element was inserted.
-    /// @pre The key must NOT already exist in the map.
-    /// @note 20-40% faster than insert() when uniqueness is guaranteed.
-    /// @warning Inserting a duplicate key causes undefined behavior.
+    /// @pre The key must NOT already exist in the map. Use contains() to verify
+    ///      if unsure. Violating this precondition creates a duplicate entry and
+    ///      corrupts the map's invariants (size, find, erase all break).
+    /// @note 20-40% faster than insert() when uniqueness is guaranteed by the caller.
+    /// @warning Inserting a duplicate key causes undefined behavior. In debug builds
+    ///          (assertions enabled), this is checked and will abort. In release builds,
+    ///          the violation is silent and catastrophic.
     template <typename K, typename V> size_type insert_unique(K&& key, V&& val) {
+        assert(!contains(key) && "insert_unique: key already exists (undefined behavior)");
         check_expand_need();
         const auto key_hash = hash_key(key);
         auto bucket = find_unique_bucket(key_hash);
@@ -1089,32 +1094,20 @@ public:
         return true;
     }
 
-    value_type* alloc_bucket(size_type num_buckets) {
-        if (num_buckets <= 0 || num_buckets > max_size())
-            throw std::length_error("emhash8::HashMap: allocation size overflow");
-        auto* p = PairAllocTraits::allocate(_pair_allocator, num_buckets);
-        if (p == nullptr)
-            throw std::bad_alloc();
-        return p;
+    value_type* alloc_bucket(size_type num_buckets) noexcept {
+        return PairAllocTraits::allocate(_pair_allocator, num_buckets);
     }
 
-    void dealloc_bucket(value_type* ptr, size_type num_buckets) {
+    void dealloc_bucket(value_type* ptr, size_type num_buckets) noexcept {
         if (ptr)
             PairAllocTraits::deallocate(_pair_allocator, ptr, num_buckets);
     }
 
-    Index* alloc_index(size_type num_buckets) {
-        // Overflow guard: num_buckets must be positive, fit in max_size,
-        // and num_buckets + EAD must not wrap around.
-        if (num_buckets <= 0 || num_buckets > max_size() || num_buckets + EAD < num_buckets)
-            throw std::length_error("emhash8::HashMap: index size overflow");
-        auto* p = IndexAllocTraits::allocate(_index_allocator, num_buckets + EAD);
-        if (p == nullptr)
-            throw std::bad_alloc();
-        return p;
+    Index* alloc_index(size_type num_buckets) noexcept {
+        return IndexAllocTraits::allocate(_index_allocator, num_buckets + EAD);
     }
 
-    void dealloc_index(Index* ptr, size_type num_buckets) {
+    void dealloc_index(Index* ptr, size_type num_buckets) noexcept {
         if (ptr)
             IndexAllocTraits::deallocate(_index_allocator, ptr, num_buckets + EAD);
     }
@@ -1177,9 +1170,8 @@ public:
         uint64_t buckets = _num_filled > (1u << 16) ? (1u << 16) : 4u;
         while (buckets < required_buckets) {
             buckets *= 2;
-            if (buckets > static_cast<uint64_t>(max_size()))
-                break;
         }
+        assert(buckets < static_cast<uint64_t>(max_size()));
 
 #if EMH_SAVE_MEM
         if (sizeof(KeyT) < sizeof(size_type) && buckets >= (1ul << (2 * 8)))
@@ -1251,7 +1243,7 @@ public:
 
 private:
     // Can we fit another element?
-    bool check_expand_need() { return reserve(_num_filled, false); }
+    bool check_expand_need() noexcept { return reserve(_num_filled, false); }
 
     // Prefetch for read operations (find)
     static void prefetch_read(char* ctrl) {

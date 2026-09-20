@@ -120,7 +120,10 @@ private:
     constexpr static uint8_t MXLOAD_FACTOR = 5; // max_load = LOAD_FACTOR / (LOAD_FACTOR + 1)
 
 public:
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     using size_t = uint32_t;
+#pragma GCC diagnostic pop
     using value_type = PairT;
     using reference = PairT&;
     using const_reference = const PairT&;
@@ -487,7 +490,7 @@ public:
 
         for (auto rit = rhs.begin(); rit != rhs.end();) {
             auto fit = find(rit->first);
-            if (fit.bucket() > _mask) {
+            if (fit == end()) {
                 insert_unique(rit->first, std::move(rit->second));
                 rhs.erase(rit++);
             } else {
@@ -788,12 +791,9 @@ public:
         auto num_buckets = _num_filled > (1u << 16) ? (1u << 16) : simd_bytes;
         while (num_buckets < required_buckets) {
             num_buckets *= 2;
-            if (num_buckets > max_size())
-                break;
         }
 
-        if (num_buckets > max_size() || num_buckets < _num_filled)
-            return;
+        assert(num_buckets < max_size() && num_buckets > _num_filled);
 
         const auto pairs_size = (1 + bucket_to_slot(num_buckets)) * sizeof(PairT);
         const auto state_size = (simd_bytes + num_buckets) * sizeof(State);

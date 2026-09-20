@@ -112,7 +112,7 @@ inline static uint32_t set_CTZ(uint64_t n) {
 #endif
 
 #elif 1
-    auto index = __builtin_ctzl(n);
+    auto index = __builtin_ctzll(n);
 #endif
 
     return static_cast<uint32_t>(index);
@@ -125,6 +125,8 @@ private:
     using htype = HashSet<KeyT, HashT, EqT>;
 
 public:
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
 #if EMH_SIZE_TYPE_BIT == 64
     using size_t = uint64_t;
 #elif EMH_SIZE_TYPE_BIT == 16
@@ -132,6 +134,7 @@ public:
 #else
     using size_t = uint32_t;
 #endif
+#pragma GCC diagnostic pop
 
     using value_type = KeyT;
     using reference = KeyT&;
@@ -407,7 +410,9 @@ public:
     std::pair<iterator, bool> emplace(KeyT&& key) { return insert(std::move(key)); }
 
     template <class... Args> std::pair<iterator, bool> try_emplace(const KeyT& key, Args&&...) { return insert(key); }
-    template <class... Args> std::pair<iterator, bool> try_emplace(KeyT&& key, Args&&...) { return insert(std::move(key)); }
+    template <class... Args> std::pair<iterator, bool> try_emplace(KeyT&& key, Args&&...) {
+        return insert(std::move(key));
+    }
 
     std::pair<iterator, bool> insert([[maybe_unused]] iterator it, const KeyT& key) { return insert(key); }
 
@@ -495,12 +500,14 @@ public:
     void _erase(size_t bucket) {
         if (need_explicit_dtor())
             _keys[bucket].~KeyT();
-        auto state = _states[bucket] = (_states[bucket + 1] % 4) == State::EEMPTY ? State::EEMPTY : State::EDELETE;
-        if (state == State::EEMPTY) {
-            while (bucket > 1 && _states[--bucket] == State::EDELETE)
+        _states[bucket] = State::EDELETE;
+        _num_filled -= 1;
+        // Propagate empty state leftward only if next bucket is empty,
+        // so that lookup probes still reach elements stored after erased slots.
+        if (_states[bucket + 1] == State::EEMPTY) {
+            while (bucket > 0 && _states[--bucket] == State::EDELETE)
                 _states[bucket] = State::EEMPTY;
         }
-        _num_filled -= 1;
     }
 
     static constexpr bool need_explicit_dtor() {
@@ -555,10 +562,9 @@ public:
     /// Remove all elements, keeping full capacity.
     void clear() {
         if (need_explicit_dtor()) {
-            for (size_t bucket = 0; _num_filled; ++bucket) {
+            for (size_t bucket = 0; bucket < _num_buckets; ++bucket) {
                 if (_states[bucket] % 2 == State::EFILLED) {
                     _keys[bucket].~KeyT();
-                    _num_filled--;
                 }
                 _states[bucket] = State::EEMPTY;
             }
@@ -800,7 +806,8 @@ private:
     }
 
     size_t find_filled_slot(size_t next_bucket) const {
-        if (_num_buckets == 0) return 0;
+        if (_num_buckets == 0)
+            return 0;
         constexpr uint64_t EFILLED_FIND = 0xfefefefefefefefeull;
         while (next_bucket < _num_buckets) {
 #if EMH_X86
@@ -818,11 +825,14 @@ private:
     }
 
 private:
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     enum State : uint8_t {
         EFILLED = 0, // Is set with key/value
         EDELETE = 3, // Is inside a search-chain, but is empty
         EEMPTY = 1,  // Never been touched empty
     };
+#pragma GCC diagnostic pop
 
     HashT _hasher;
     EqT _eq;

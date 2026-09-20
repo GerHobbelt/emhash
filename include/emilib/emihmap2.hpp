@@ -150,7 +150,10 @@ private:
     using PairT = std::pair<const KeyT, ValueT>;
 
 public:
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     using size_t = uint32_t; // intentionally shadows global size_t for 32-bit compact storage
+#pragma GCC diagnostic pop
     using value_type = PairT;
     using reference = PairT&;
     using const_reference = const PairT&;
@@ -520,7 +523,7 @@ public:
 
         for (auto rit = rhs.begin(); rit != rhs.end();) {
             auto fit = find(rit->first);
-            if (fit.bucket() > _mask) {
+            if (fit == end()) {
                 insert_unique(rit->first, std::move(rit->second));
                 rhs.erase(rit++);
             } else {
@@ -841,12 +844,9 @@ public:
         uint64_t buckets = _num_filled > (1u << 16) ? (1u << 16) : simd_bytes;
         while (buckets < required_buckets) {
             buckets *= 2;
-            if (buckets > max_size())
-                break;
         }
 
-        if (buckets > max_size() || buckets < _num_filled)
-            return;
+        assert(buckets < max_size() && buckets > _num_filled);
 
         const auto pairs_size = (buckets + 1) * sizeof(PairT);
         const auto state_size = buckets + simd_bytes;

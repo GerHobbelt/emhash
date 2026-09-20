@@ -604,7 +604,7 @@ public:
         return {this, find_filled_slot(key)};
     }
 
-    KeyT& index(const uint32_t index) noexcept { return _pairs[index]; }
+    KeyT& index(const uint32_t slot) noexcept { return _pairs[slot]; }
 
     template <typename K = KeyT> bool contains(const K& key) const noexcept {
         return find_filled_slot(key) != _num_filled;
@@ -688,7 +688,15 @@ public:
             do_insert(*first);
     }
 
+    /// @brief Insert a key without checking for duplicates.
+    /// @param key The key to insert.
+    /// @return The bucket index where the element was inserted.
+    /// @pre The key must NOT already exist in the set. Use contains() to verify
+    ///      if unsure. Violating this precondition creates a duplicate entry and
+    ///      corrupts the set's invariants.
+    /// @warning Same as HashMap::insert_unique — duplicate keys cause UB.
     template <typename K> size_type do_unique(K&& key) {
+        assert(!contains(key) && "insert_unique: key already exists (undefined behavior)");
         check_expand_need();
         const auto key_hash = hash_key(key);
         auto bucket = find_unique_bucket(key_hash);
@@ -974,7 +982,7 @@ public:
         memset(reinterpret_cast<char*>(_index + num_buckets), 0, sizeof(_index[0]) * EAD);
     }
 
-    void rehash(uint64_t required_buckets) {
+    void rehash(uint64_t required_buckets) noexcept {
         if (required_buckets < _num_filled)
             return;
 
@@ -983,7 +991,7 @@ public:
             buckets *= 2;
         }
         if (buckets > static_cast<uint64_t>(max_size()) || buckets < _num_filled)
-            throw std::length_error("emhash8::HashSet: too many elements");
+            return;
 
 #if EMH_SAVE_MEM
         if (sizeof(KeyT) < sizeof(size_type) && buckets >= (1ul << (2 * 8)))
@@ -1055,7 +1063,7 @@ public:
 
 private:
     // Can we fit another element?
-    bool check_expand_need() { return reserve(_num_filled, false); }
+    bool check_expand_need() noexcept { return reserve(_num_filled, false); }
 
     static void prefetch_heap_block(char* ctrl) {
         // Prefetch the heap-allocated memory region to resolve potential TLB
