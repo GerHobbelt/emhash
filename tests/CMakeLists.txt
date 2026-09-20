@@ -13,7 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # source files, not in the library headers which we intentionally do not modify.)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -pedantic)
-    set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -flto=auto")
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 else()
     set(CMAKE_CXX_FLAGS_RELEASE "/O2")
@@ -65,6 +65,8 @@ emhash_add_test(test_merge_correctness verify/test_merge_correctness.cpp)
 emhash_add_test(edge_test verify/edge_test.cpp)
 emhash_add_test(test_find_slot_bucket verify/test_find_slot_bucket.cpp)
 target_link_libraries(test_find_slot_bucket PRIVATE Threads::Threads)
+
+emhash_add_test(test_string_key_leak verify/test_string_key_leak.cpp)
 
 # ============================================================================
 # Stress Tests
@@ -153,6 +155,7 @@ emhash_register_test(test_special_key_types)
 emhash_register_test(test_merge_correctness)
 emhash_register_test(edge_test)
 emhash_register_test(test_find_slot_bucket)
+emhash_register_test(test_string_key_leak)
 
 # Stress tests
 emhash_register_test(test_stress)
@@ -220,3 +223,34 @@ add_custom_target(emhash_test_help
     COMMAND ${CMAKE_COMMAND} -E echo "  all_tests     - Run all tests"
     COMMAND ${CMAKE_COMMAND} -E echo "  emhash_test_help - Show this help"
 )
+
+# ============================================================================
+# Google Benchmark (optional, off by default)
+# ============================================================================
+option(EMHASH_ENABLE_BENCH "Enable Google Benchmark performance tests" OFF)
+
+if(EMHASH_ENABLE_BENCH)
+    include(FetchContent)
+    FetchContent_Declare(
+        googlebench
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG        v1.9.4
+        GIT_SHALLOW    TRUE
+    )
+    # Prevent Google Benchmark from building tests
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+    FetchContent_Populate(googlebench)
+    add_subdirectory(${googlebench_SOURCE_DIR} ${googlebench_BINARY_DIR} EXCLUDE_FROM_ALL)
+
+    add_executable(emhash_bench bench/emhash_bench.cpp)
+    target_compile_features(emhash_bench PRIVATE cxx_std_17)
+    target_include_directories(emhash_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+    target_link_libraries(emhash_bench PRIVATE benchmark::benchmark)
+
+    add_custom_target(bench
+        COMMAND emhash_bench --benchmark_format=console
+        DEPENDS emhash_bench
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    )
+endif()

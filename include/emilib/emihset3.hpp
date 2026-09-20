@@ -243,8 +243,7 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask;
-        size_t _bucket;
+        size_t _bmask = 0;        size_t _bucket;
         size_t _from;
     };
 
@@ -311,14 +310,13 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask;
-        size_t _bucket;
+        size_t _bmask = 0;        size_t _bucket;
         size_t _from;
     };
 
     // ------------------------------------------------------------------------
 
-    HashSet(size_t n = 4, float lf = EMH_DEFAULT_LOAD_FACTOR) {
+    explicit HashSet(size_t n = 4, float lf = EMH_DEFAULT_LOAD_FACTOR) {
         _mlf = (uint32_t)((1 << 28) / lf);
         rehash(n);
     }
@@ -626,7 +624,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600
         return !std::is_trivially_destructible<KeyT>::value;
 #else
-        return !std::is_pod<KeyT>::value;
+        return !std::is_trivially_destructible<KeyT>::value;
 #endif
     }
 
@@ -635,7 +633,7 @@ public:
         // is_trivially_copy_constructible
         return std::is_trivially_copyable<KeyT>::value;
 #else
-        return std::is_pod<KeyT>::value;
+        return std::is_trivially_copyable<KeyT>::value;
 #endif
     }
 
@@ -669,7 +667,7 @@ public:
     void shrink_to_fit() noexcept { rehash(_num_filled + 1); }
 
     bool reserve(size_t num_elems) {
-        const auto required_buckets = ((uint64_t)num_elems * _mlf >> 28);
+        const size_t required_buckets = static_cast<size_t>((uint64_t)num_elems * _mlf >> 28);
         if (EMH_LIKELY(required_buckets < _num_buckets))
             return false;
 
@@ -813,7 +811,7 @@ private:
     // Find the bucket with this key, or return a good empty bucket to place the key in.
     // In the later case, the bucket is expected to be filled.
     template <typename K> size_t find_or_allocate(const K& key, bool& bnew) noexcept {
-        const auto required_buckets = ((uint64_t)_num_filled * _mlf >> 28);
+        const size_t required_buckets = static_cast<size_t>((uint64_t)_num_filled * _mlf >> 28);
         if (EMH_UNLIKELY(required_buckets >= _num_buckets))
             rehash(required_buckets + 2);
 

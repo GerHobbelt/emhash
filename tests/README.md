@@ -33,9 +33,9 @@ cmake --build build --target all_tests
 # Show available targets
 cmake --build build --target emhash_test_help
 
-# Enable fuzz tests (requires clang)
-cmake -B build -DENABLE_FUZZ_TESTS=ON
-cmake --build build
+# Enable Google Benchmark performance tests (requires internet to fetch dependency)
+cmake -B build -DEMHASH_ENABLE_BENCH=ON
+cmake --build build --target emhash_bench
 ```
 
 ### Manual Compilation (Linux/WSL)
@@ -199,9 +199,9 @@ Comprehensive validation tests for all emhash versions. No third-party dependenc
 
 ## 5. fuzz/ — Fuzzing Tests
 
-> **Note**: Most fuzz source files (`fuzz_*.cpp`) are not currently tracked in git.
-> They are generated during fuzzing sessions and stored locally. Only `reproduce_emhash8_bug.cpp`
-> is tracked. To add fuzz tests, create `fuzz_*.cpp` files and enable `ENABLE_FUZZ_TESTS` in CMake.
+> **Note**: Most fuzz source files (`fuzz_*.cpp`) are tracked in git. Only `reproduce_emhash8_bug.cpp`
+> is registered as a CTest target; other fuzz files can be compiled manually with clang+libfuzzer
+> or used with the `ENABLE_FUZZ_TESTS` option (if enabled in CMake).
 
 | File | Purpose | Compile Command |
 |------|---------|-----------------|

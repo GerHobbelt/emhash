@@ -250,8 +250,7 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask;
-        size_t _bucket;
+        size_t _bmask = 0;        size_t _bucket;
         size_t _from;
     };
 
@@ -318,19 +317,21 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask;
-        size_t _bucket;
+        size_t _bmask = 0;        size_t _bucket;
         size_t _from;
     };
 
     // ------------------------------------------------------------------------
 
-    HashMap(size_t n = 4, float lf = EMH_DEFAULT_LOAD_FACTOR) {
+    explicit HashMap(size_t n = 4, float lf = EMH_DEFAULT_LOAD_FACTOR) {
         _mlf = (uint32_t)((1 << 28) / lf);
         rehash(n);
     }
 
-    HashMap(const HashMap& other) { clone(other); }
+    HashMap(const HashMap& other) {
+        rehash(1);
+        clone(other);
+    }
 
     HashMap(HashMap&& other) {
         rehash(1);
@@ -589,7 +590,7 @@ public:
     }
 
     template <typename K, typename V> size_t insert_unique(K&& key, V&& val) noexcept {
-        const size_t required_buckets = ((size_t)_num_filled * _mlf >> 28);
+        const size_t required_buckets = static_cast<size_t>((uint64_t)_num_filled * _mlf >> 28);
         if (required_buckets >= _num_buckets)
             rehash(required_buckets + 2);
 
@@ -728,7 +729,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600
         return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #else
-        return !(std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #endif
     }
 
@@ -736,7 +737,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600
         return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #else
-        return (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #endif
     }
 
@@ -769,7 +770,7 @@ public:
     void shrink_to_fit() noexcept { rehash(_num_filled + 1); }
 
     bool reserve(size_t num_elems) {
-        const auto required_buckets = ((uint64_t)num_elems * _mlf >> 28);
+        const size_t required_buckets = static_cast<size_t>((uint64_t)num_elems * _mlf >> 28);
         if (EMH_LIKELY(required_buckets < _num_buckets))
             return false;
 
@@ -915,7 +916,7 @@ private:
     // Find the bucket with this key, or return a good empty bucket to place the key in.
     // In the later case, the bucket is expected to be filled.
     template <typename K> size_t find_or_allocate(const K& key, bool& bnew) noexcept {
-        const size_t required_buckets = ((size_t)_num_filled * _mlf >> 28);
+        const size_t required_buckets = static_cast<size_t>((uint64_t)_num_filled * _mlf >> 28);
         if (required_buckets >= _num_buckets)
             rehash(required_buckets + 2);
 

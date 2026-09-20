@@ -7,6 +7,12 @@
 
 #pragma once
 
+// Allow users to provide their own config by defining EMH_CONFIG_INCLUDED
+// before including any emhash header. User config should define all required
+// macros (EMH_LIKELY, EMH_INLINE, etc.) or include this file after customizing.
+#ifndef EMH_CONFIG_INCLUDED
+#define EMH_CONFIG_INCLUDED
+
 // Branch prediction hints
 #if defined(__GNUC__) || defined(__clang__)
 #define EMH_LIKELY(condition) __builtin_expect(!!(condition), 1)
@@ -62,3 +68,5 @@
 #ifndef EMHASH_CACHE_LINE_SIZE
 #define EMHASH_CACHE_LINE_SIZE EMH_CACHE_LINE_SIZE
 #endif
+
+#endif // EMH_CONFIG_INCLUDED

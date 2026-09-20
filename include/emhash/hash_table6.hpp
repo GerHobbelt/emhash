@@ -24,9 +24,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE
 
+/// @file hash_table6.hpp
+/// @brief Linked-bucket open addressing hash map with bitmask (emhash6)
+/// @version 1.7.2
+/// @copyright Copyright (c) 2019-2026 Huang Yuanbing
+
 #pragma once
 
-#include "emhash/config.hpp"
+#ifdef __has_include
+#  if __has_include("config.hpp")
+#    include "config.hpp"
+#  elif __has_include("emhash/config.hpp")
+#    include "emhash/config.hpp"
+#  endif
+#else
+#  include "config.hpp"
+#endif
 
 #include <cstring>
 #include <string>
@@ -206,7 +219,7 @@ template <typename First, typename Second> struct entry {
 #endif
 };
 
-/// A cache-friendly hash table with open addressing, linear/qua probing and power-of-two capacity
+/// A cache-fristd::endly hash table with open addressing, linear/qua probing and power-of-two capacity
 template <typename KeyT, typename ValueT, typename HashT = std::hash<KeyT>, typename EqT = std::equal_to<KeyT>,
           typename AllocT = std::allocator<std::pair<KeyT, ValueT>>>
 class HashMap {
@@ -266,7 +279,7 @@ public:
         void init() {
             _from = (_bucket / SIZE_BIT) * SIZE_BIT;
             if (_bucket < _map->bucket_count()) {
-                _bmask = *(size_t*)((size_t*)_map->_bitmask + _from / SIZE_BIT);
+                memcpy(&_bmask, _map->_bitmask + _from / SIZE_BIT * sizeof(size_t), sizeof(_bmask));
                 _bmask |= (1ull << _bucket % SIZE_BIT) - 1;
                 _bmask = ~_bmask;
             } else {
@@ -324,7 +337,8 @@ public:
             }
 
             do {
-                _bmask = ~*(size_t*)((size_t*)_map->_bitmask + (_from += SIZE_BIT) / SIZE_BIT);
+                memcpy(&_bmask, _map->_bitmask + (_from += SIZE_BIT) / SIZE_BIT * sizeof(size_t), sizeof(_bmask));
+                _bmask = ~_bmask;
             } while (_bmask == 0);
 
             _bucket = _from + CTZ(_bmask);
@@ -334,8 +348,7 @@ public:
         const htype* _map;
         size_type _bucket;
         size_type _from;
-        size_t _bmask;
-    };
+        size_t _bmask = 0;    };
 
     class const_iterator {
     public:
@@ -359,7 +372,7 @@ public:
         void init() {
             _from = (_bucket / SIZE_BIT) * SIZE_BIT;
             if (_bucket < _map->bucket_count()) {
-                _bmask = *(size_t*)((size_t*)_map->_bitmask + _from / SIZE_BIT);
+                memcpy(&_bmask, _map->_bitmask + _from / SIZE_BIT * sizeof(size_t), sizeof(_bmask));
                 _bmask |= (1ull << _bucket % SIZE_BIT) - 1;
                 _bmask = ~_bmask;
             } else {
@@ -404,7 +417,8 @@ public:
             }
 
             do {
-                _bmask = ~*(size_t*)((size_t*)_map->_bitmask + (_from += SIZE_BIT) / SIZE_BIT);
+                memcpy(&_bmask, _map->_bitmask + (_from += SIZE_BIT) / SIZE_BIT * sizeof(size_t), sizeof(_bmask));
+                _bmask = ~_bmask;
             } while (_bmask == 0);
 
             _bucket = _from + CTZ(_bmask);
@@ -414,8 +428,7 @@ public:
         const htype* _map;
         size_type _bucket;
         size_type _from;
-        size_t _bmask;
-    };
+        size_t _bmask = 0;    };
 
     void init(size_type bucket, float lf = EMH_DEFAULT_LOAD_FACTOR) {
 #if EMH_SAFE_HASH
@@ -430,7 +443,7 @@ public:
         rehash(bucket);
     }
 
-    HashMap(size_type bucket = 4, float lf = EMH_DEFAULT_LOAD_FACTOR) { init(bucket, lf); }
+    explicit HashMap(size_type bucket = 4, float lf = EMH_DEFAULT_LOAD_FACTOR) { init(bucket, lf); }
 
     explicit HashMap(const AllocT& alloc) : _alloc(PairAlloc(alloc)) { init(2, EMH_DEFAULT_LOAD_FACTOR); }
 
@@ -473,7 +486,7 @@ public:
             emplace(*first);
     }
 
-    HashMap& operator=(const HashMap& rhs) noexcept {
+    HashMap& operator=(const HashMap& rhs) {
         if (this == &rhs)
             return *this;
 
@@ -562,7 +575,7 @@ public:
                PACK_SIZE * sizeof(PairT) + _num_buckets / 8 + BIT_PACK);
     }
 
-    void swap(HashMap& rhs) {
+    void swap(HashMap& rhs) noexcept {
         std::swap(_hasher, rhs._hasher);
         std::swap(_eq, rhs._eq);
         std::swap(_alloc, rhs._alloc);
@@ -585,7 +598,9 @@ public:
             return {this, _mask + 1};
 #endif
 
-        const auto bmask = ~(*(size_t*)_bitmask);
+        size_t bmask;
+        memcpy(&bmask, _bitmask, sizeof(bmask));
+        bmask = ~bmask;
         if (bmask != 0)
             return {this, CTZ(bmask)};
 
@@ -600,7 +615,9 @@ public:
             return {this, _mask + 1};
 #endif
 
-        const auto bmask = ~(*(size_t*)_bitmask);
+        size_t bmask;
+        memcpy(&bmask, _bitmask, sizeof(bmask));
+        bmask = ~bmask;
         if (bmask != 0)
             return {this, CTZ(bmask)};
 
@@ -854,7 +871,7 @@ public:
     }
 
     /// Const version of the above
-    ValueT* try_get(const KeyT& key) const noexcept {
+    const ValueT* try_get(const KeyT& key) const noexcept {
         const auto bucket = find_filled_bucket(key);
         return bucket <= _mask ? &EMH_VAL(_pairs, bucket) : nullptr;
     }
@@ -934,16 +951,6 @@ public:
         for (auto it = first; it != last; ++it)
             do_insert(it->first, it->second);
     }
-
-#if 0
-    template <typename Iter>
-    void insert_unique(Iter begin, Iter end)
-    {
-        reserve(std::distance(begin, end) + _num_filled);
-        for (; begin != end; ++begin)
-            do_insert_unique(*begin);
-    }
-#endif
 
     template <typename K, typename V> inline size_type insert_unique(K&& key, V&& val) {
         return do_insert_unique(std::forward<K>(key), std::forward<V>(val));
@@ -1071,7 +1078,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600
         return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #else
-        return !(std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #endif
     }
 
@@ -1079,7 +1086,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600
         return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #else
-        return (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #endif
     }
 
@@ -1114,7 +1121,7 @@ public:
 
     /// Make room for this many elements
     bool reserve(uint64_t num_elems) {
-        const auto required_buckets = (uint64_t)(num_elems * _mlf >> 27) + 1;
+        const size_t required_buckets = static_cast<size_t>((uint64_t)(num_elems * _mlf >> 27) + 1);
         if (EMH_LIKELY(required_buckets <= _mask))
             return false;
 
@@ -1129,11 +1136,6 @@ public:
     void rehash(uint64_t required_buckets) {
         if (required_buckets < _num_filled)
             return;
-#if 0 //(__GNUC__ >= 4 || __clang__)
-        size_type num_buckets = 1ul << (sizeof(required_buckets) * 8 - __builtin_clz(required_buckets));
-        if (num_buckets < sizeof(size_t))
-            num_buckets = sizeof(size_t);
-#else
         uint64_t buckets = _num_filled > (1u << 16) ? (1u << 16) : sizeof(size_t);
         while (buckets < required_buckets) {
             buckets *= 2;
@@ -1147,7 +1149,6 @@ public:
         if (buckets > max_size() || buckets < _num_filled)
             throw std::length_error("emhash6::HashMap: too many elements");
         // assert(num_buckets == (2 << CTZ(required_buckets)));
-#endif
 
         auto num_buckets = (size_type)buckets;
         // assert(num_buckets > _num_filled);
@@ -1230,7 +1231,7 @@ public:
 #ifdef EMH_LOG
             static size_type ihashs = 0;
             EMH_LOG() << "EMH_BUCKET_INDEX = " << EMH_BUCKET_INDEX << "|rhash_nums = " << ihashs++ << "|"
-                      << __FUNCTION__ << "|" << buff << endl;
+                      << __FUNCTION__ << "|" << buff << std::endl;
 #else
             puts(buff);
 #endif

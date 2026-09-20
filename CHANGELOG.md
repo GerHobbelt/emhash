@@ -13,15 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/performance_tracking.md` for tracking benchmark results across versions
 - `.github/workflows/format-check.yml` — clang-format LLVM style check on PRs
 - `.github/workflows/release.yml` — automatic GitHub Release creation on tag push
-- `.github/workflows/ci.yml` — added `compat` job with multi-version compiler matrix (GCC 11-13, Clang 16-18, C++17/20)
+- `.github/workflows/ci.yml` — added `compat` job with C++20/23 standard compatibility testing
 - `.github/dependabot.yml` — monthly GitHub Actions dependency updates
 - `.github/CODEOWNERS` — default code owner assignment
 - `.github/stale.yml` — auto-close inactive issues after 90 days
 - `.editorconfig` — consistent editor settings across IDEs
 - CMake: version from `VERSION` file, `emhashConfigVersion.cmake`, complete header list
 - `conanfile.py` — Conan package manager support
-- `docs/vcpkg/` — vcpkg port definition (ready for submission)
-- `docs/amalgamate.sh` — generate single-header distributions
+- `scripts/vcpkg/` — vcpkg port definition (ready for submission)
+- `scripts/amalgamate.sh` — generate single-header distributions
 - `docs/mkdocs.yml` — MkDocs Material configuration for documentation site
 - Doxygen class-level documentation for `hash_table7.hpp` and `hash_table8.hpp`
 - Cross-links from README to new docs/adr/ and PERFORMANCE_TRACKING.md
@@ -83,6 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive benchmark suite
 - Third-party comparison benchmarks
 
+[Unreleased]: https://github.com/ktprime/emhash/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/ktprime/emhash/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ktprime/emhash/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ktprime/emhash/releases/tag/v1.0.0

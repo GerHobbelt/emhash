@@ -25,7 +25,15 @@
 
 #pragma once
 
-#include "emhash/config.hpp"
+#ifdef __has_include
+#  if __has_include("config.hpp")
+#    include "config.hpp"
+#  elif __has_include("emhash/config.hpp")
+#    include "emhash/config.hpp"
+#  endif
+#else
+#  include "config.hpp"
+#endif
 
 #include <cstring>
 #include <string>
@@ -76,8 +84,18 @@ static uint32_t CTZ(size_t n) {
 #endif
 
 #ifdef _WIN32
+#if defined(_WIN64) || defined(_M_X64)
     unsigned long index;
     _BitScanForward64(&index, n);
+#else
+    unsigned long index;
+    if (static_cast<unsigned long>(n) != 0)
+        _BitScanForward(&index, static_cast<unsigned long>(n));
+    else {
+        _BitScanForward(&index, static_cast<unsigned long>(n >> 32));
+        index += 32;
+    }
+#endif
 #elif defined(__LP64__) || (SIZE_MAX == UINT64_MAX) || defined(__x86_64__)
     int32_t index = __builtin_ctzll(n);
 #else
@@ -87,7 +105,7 @@ static uint32_t CTZ(size_t n) {
     return (uint32_t)index;
 }
 
-/// A cache-friendly hash table with open addressing, linear probing and power-of-two capacity
+/// A cache-fristd::endly hash table with open addressing, linear probing and power-of-two capacity
 template <typename KeyT, typename HashT = std::hash<KeyT>, typename EqT = std::equal_to<KeyT>,
           typename AllocT = std::allocator<KeyT>>
 class HashSet {
@@ -129,7 +147,7 @@ public:
         void init() {
             _from = (_bucket / SIZE_BIT) * SIZE_BIT;
             if (_bucket < _set->bucket_count()) {
-                _bmask = *(size_t*)((size_t*)_set->_bitmask + _from / SIZE_BIT);
+                memcpy(&_bmask, _set->_bitmask + _from / SIZE_BIT * sizeof(size_t), sizeof(_bmask));
                 _bmask |= (1ull << _bucket % SIZE_BIT) - 1;
                 _bmask = ~_bmask;
             } else {
@@ -178,17 +196,17 @@ public:
                 return;
             }
 
-            do
-                _bmask = ~*(size_t*)((size_t*)_set->_bitmask + (_from += SIZE_BIT) / SIZE_BIT);
-            while (_bmask == 0);
+            do {
+                memcpy(&_bmask, _set->_bitmask + (_from += SIZE_BIT) / SIZE_BIT * sizeof(size_t), sizeof(_bmask));
+                _bmask = ~_bmask;
+            } while (_bmask == 0);
 
             _bucket = _from + CTZ(_bmask);
         }
 
     public:
         const htype* _set;
-        size_t _bmask;
-        size_type _bucket;
+        size_t _bmask = 0;        size_type _bucket;
         size_type _from;
     };
 
@@ -209,7 +227,7 @@ public:
         void init() {
             _from = (_bucket / SIZE_BIT) * SIZE_BIT;
             if (_bucket < _set->bucket_count()) {
-                _bmask = *(size_t*)((size_t*)_set->_bitmask + _from / SIZE_BIT);
+                memcpy(&_bmask, _set->_bitmask + _from / SIZE_BIT * sizeof(size_t), sizeof(_bmask));
                 _bmask |= (1ull << _bucket % SIZE_BIT) - 1;
                 _bmask = ~_bmask;
             } else {
@@ -246,17 +264,17 @@ public:
                 return;
             }
 
-            do
-                _bmask = ~*(size_t*)((size_t*)_set->_bitmask + (_from += SIZE_BIT) / SIZE_BIT);
-            while (_bmask == 0);
+            do {
+                memcpy(&_bmask, _set->_bitmask + (_from += SIZE_BIT) / SIZE_BIT * sizeof(size_t), sizeof(_bmask));
+                _bmask = ~_bmask;
+            } while (_bmask == 0);
 
             _bucket = _from + CTZ(_bmask);
         }
 
     public:
         const htype* _set;
-        size_t _bmask;
-        size_type _bucket;
+        size_t _bmask = 0;        size_type _bucket;
         size_type _from;
     };
 
@@ -287,7 +305,7 @@ public:
         reserve(bucket);
     }
 
-    HashSet(size_type bucket = 4, float load_factor = 0.95f) { init(bucket, load_factor); }
+    explicit HashSet(size_type bucket = 4, float load_factor = 0.95f) { init(bucket, load_factor); }
 
     explicit HashSet(const allocator_type& alloc) : _alloc(alloc) { init(4, 0.95f); }
 
@@ -383,7 +401,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600 || __clang__
         if (std::is_trivially_copyable<KeyT>::value)
 #else
-        if (std::is_pod<KeyT>::value)
+        if (std::is_trivially_copyable<KeyT>::value)
 #endif
             memcpy((void*)_pairs, opairs, _num_buckets * sizeof(PairT));
         else {
@@ -397,7 +415,7 @@ public:
                2 * sizeof(PairT) + _num_buckets / 8 + sizeof(size_t));
     }
 
-    inline void swap(HashSet& other) {
+    inline void swap(HashSet& other) noexcept {
         std::swap(_hasher, other._hasher);
         std::swap(_eq, other._eq);
         std::swap(_alloc, other._alloc);
@@ -634,17 +652,6 @@ public:
             return {{this, bucket}, false};
         }
     }
-
-#if 0
-    template <typename Iter>
-    inline void insert(Iter begin, Iter end)
-    {
-        reserve(end - begin + _num_filled);
-        for (; begin != end; ++begin) {
-            insert(*begin);
-        }
-    }
-#endif
 
     void insert(std::initializer_list<value_type> ilist) {
         reserve((size_type)ilist.size() + _num_filled);
@@ -898,7 +905,7 @@ private:
                      load_factor());
 #ifdef EMH_LOG
             static size_type ihashs = 0;
-            EMH_LOG() << "|rhash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << endl;
+            EMH_LOG() << "|rhash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << std::endl;
 #else
             puts(buff);
 #endif
@@ -1079,7 +1086,6 @@ private:
             const auto bucket2 = bucket1 + 1;
             if (_pairs[bucket2].second == INACTIVE)
                 return bucket2;
-#if 1
             else if (last > 3) {
                 const auto next = (bucket1 + _num_filled) & _mask;
                 const auto bucket3 = next;
@@ -1090,7 +1096,6 @@ private:
                 if (_pairs[bucket4].second == INACTIVE)
                     return bucket4;
             }
-#endif
         }
     }
 
@@ -1100,7 +1105,9 @@ private:
         auto* const start = (uint8_t*)_bitmask + bucket_from / 8;
 
 #if EMH_X86
-        const auto bmask = *(size_t*)(start) >> boset;
+        size_t bmask;
+        memcpy(&bmask, start, sizeof(bmask));
+        bmask >>= boset;
 #else
         // const auto boset = bucket_from % SIZE_BIT;
         // auto* const start = (size_t*)_bitmask + bucket_from / SIZE_BIT;
@@ -1124,15 +1131,6 @@ private:
             const auto bmask3 = *((size_t*)_bitmask + step);
             if (bmask3 != 0)
                 return (size_type)(step * SIZE_BIT + CTZ(bmask3));
-#if 0
-            const auto next1 = (qmask / 2 + _last)  & qmask;
-//            const auto next1 = qmask - _last;
-            const auto bmask1 = *((size_t*)_bitmask + next1);
-            if (bmask1 != 0) {
-                _last = next1;
-                return next1 * SIZE_BIT + CTZ(bmask1);
-            }
-#endif
             _last = (_last + 1) & qmask;
         }
         return 0;

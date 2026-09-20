@@ -30,7 +30,15 @@
 
 #pragma once
 
-#include "emhash/config.hpp"
+#ifdef __has_include
+#  if __has_include("config.hpp")
+#    include "config.hpp"
+#  elif __has_include("emhash/config.hpp")
+#    include "emhash/config.hpp"
+#  endif
+#else
+#  include "config.hpp"
+#endif
 
 #include <cstring>
 #include <string>
@@ -221,7 +229,7 @@ public:
         rehash(bucket);
     }
 
-    HashMap(size_type bucket = 2, float mlf = EMH_DEFAULT_LOAD_FACTOR) { init(bucket, mlf); }
+    explicit HashMap(size_type bucket = 2, float mlf = EMH_DEFAULT_LOAD_FACTOR) { init(bucket, mlf); }
 
     HashMap(const HashMap& rhs)
         : _pair_allocator(PairAllocTraits::select_on_container_copy_construction(rhs._pair_allocator)),
@@ -371,7 +379,7 @@ public:
         }
     }
 
-    void swap(HashMap& rhs) {
+    void swap(HashMap& rhs) noexcept {
         std::swap(_eq, rhs._eq);
         std::swap(_hasher, rhs._hasher);
         std::swap(_pairs, rhs._pairs);
@@ -649,7 +657,7 @@ public:
     }
 
     /// @brief Const version of try_get().
-    ValueT* try_get(const KeyT& key) const noexcept {
+    const ValueT* try_get(const KeyT& key) const noexcept {
         const auto slot = find_filled_slot(key);
         return slot != _num_filled ? &_pairs[slot].second : nullptr;
     }
@@ -757,17 +765,6 @@ public:
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
             do_insert(*it);
     }
-
-#if 0
-    template <typename Iter>
-    void insert_unique(Iter begin, Iter end)
-    {
-        reserve(std::distance(begin, end) + _num_filled, false);
-        for (; begin != end; ++begin) {
-            insert_unique(*begin);
-        }
-    }
-#endif
 
     /// @brief Insert a key-value pair without checking for duplicates.
     /// @param key The key to insert.
@@ -925,7 +922,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600
         return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #else
-        return !(std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #endif
     }
 
@@ -933,7 +930,7 @@ public:
 #if __cplusplus >= 201103L || _MSC_VER > 1600
         return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #else
-        return (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #endif
     }
 
@@ -1096,7 +1093,7 @@ public:
         return true;
     }
 
-    void rebuild(size_type num_buckets, size_type required_buckets, size_type old_num_buckets) noexcept {
+    void rebuild(size_type num_buckets, size_type required_buckets, size_type old_num_buckets) {
         const auto need_size = std::max((size_type)((double)num_buckets * (double)max_load_factor()) + 4, required_buckets + 2);
         auto new_pairs = alloc_bucket(need_size);
         if (is_trivially_copyable()) {
@@ -1192,7 +1189,7 @@ public:
                      sizeof(_pairs[0]), collision * 100.0 / _num_filled, last * 100.0 / _num_buckets);
 #ifdef EMH_LOG
             static uint32_t ihashs = 0;
-            EMH_LOG() << "hash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << endl;
+            EMH_LOG() << "hash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << std::endl;
 #else
             puts(buff);
 #endif
@@ -1519,7 +1516,7 @@ private:
     /***
         Different probing techniques usually provide a trade-off between memory locality and avoidance of clustering.
         Since Robin Hood hashing is relatively resilient to clustering (both primary and secondary), linear probing is
-    the most cache friendly alternativeis typically used.
+    the most cache fristd::endly alternativeis typically used.
 
         It's the core algorithm of this hash map with highly optimization/benchmark.
         normally linear probing is inefficient with high load factor, it use a new 3-way linear

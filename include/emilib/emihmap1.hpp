@@ -217,8 +217,7 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask;
-        size_t _bucket;
+        size_t _bmask = 0;        size_t _bucket;
         size_t _from;
     };
 
@@ -288,16 +287,18 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask;
-        size_t _bucket;
+        size_t _bmask = 0;        size_t _bucket;
         size_t _from;
     };
 
     // ------------------------------------------------------------------------
 
-    HashMap(size_t n = 4) noexcept { rehash(n); }
+    explicit HashMap(size_t n = 4) noexcept { rehash(n); }
 
-    HashMap(const HashMap& other) noexcept { clone(other); }
+    HashMap(const HashMap& other) {
+        rehash(1);
+        clone(other);
+    }
 
     HashMap(HashMap&& other) noexcept {
         rehash(1);
@@ -318,7 +319,7 @@ public:
             insert(*first);
     }
 
-    HashMap& operator=(const HashMap& other) noexcept {
+    HashMap& operator=(const HashMap& other) {
         if (this != &other)
             clone(other);
         return *this;
@@ -660,7 +661,7 @@ public:
 
     void _erase(size_t bucket) noexcept {
         _num_filled -= 1;
-        if (!need_explicit_dtor()) {
+        if (need_explicit_dtor()) {
             const auto slot = bucket_to_slot(bucket);
             _pairs[slot].~PairT();
         }
@@ -694,9 +695,9 @@ public:
 
     static constexpr bool need_explicit_dtor() {
 #if __cplusplus >= 201402L || _MSC_VER > 1600
-        return (std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
+        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #else
-        return (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #endif
     }
 
@@ -704,7 +705,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600
         return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #else
-        return (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #endif
     }
 
@@ -720,7 +721,7 @@ public:
     }
 
     void clear_data() noexcept {
-        if (!need_explicit_dtor()) {
+        if (need_explicit_dtor()) {
             for (auto it = begin(); _num_filled; ++it) {
                 const auto bucket = it.bucket();
                 _pairs[bucket_to_slot(bucket)].~PairT();
@@ -816,7 +817,7 @@ public:
                 const auto slot = bucket_to_slot(bucket);
                 new (_pairs + slot) PairT(std::move(src_pair));
                 _num_filled++;
-                if (!need_explicit_dtor())
+                if (need_explicit_dtor())
                     src_pair.~PairT();
             }
         }

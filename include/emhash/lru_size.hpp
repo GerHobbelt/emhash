@@ -22,7 +22,15 @@
 
 #pragma once
 
-#include "emhash/config.hpp"
+#ifdef __has_include
+#  if __has_include("config.hpp")
+#    include "config.hpp"
+#  elif __has_include("emhash/config.hpp")
+#    include "emhash/config.hpp"
+#  endif
+#else
+#  include "config.hpp"
+#endif
 
 #include <cstring>
 #include <cstdlib>
@@ -33,6 +41,7 @@
 #include <functional>
 #include <iterator>
 #include <ctime>
+#include <chrono>
 #include <algorithm>
 
 #ifdef __has_include
@@ -69,7 +78,7 @@ template <typename First, typename Second> struct entry {
 #if EMHASH_SET_TIME
         return EMHASH_SET_TIME;
 #elif EMHASH_LRU_TIME
-        return time(0);
+        return (uint32_t)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 #else
         static uint32_t _sid = 0;
         return ++_sid; // overflow
@@ -120,7 +129,7 @@ template <typename First, typename Second> struct entry {
         return *this;
     }
 
-    entry& operator=(entry& o) {
+    entry& operator=(const entry& o) {
         second = o.second;
         first = o.first;
         bucket = o.bucket;
@@ -140,7 +149,7 @@ template <typename First, typename Second> struct entry {
     uint32_t orderid;
 }; // __attribute__ ((packed));
 
-/// A cache-friendly hash table with open addressing, linear/qua probing and power-of-two capacity
+/// A cache-fristd::endly hash table with open addressing, linear/qua probing and power-of-two capacity
 template <typename KeyT, typename ValueT, typename HashT = std::hash<KeyT>, typename EqT = std::equal_to<KeyT>>
 class lru_cache {
 private:
@@ -256,7 +265,7 @@ public:
         max_load_factor(0.85f);
     }
 
-    lru_cache(uint32_t bucket = 8, uint32_t max_bucket = 1 << 20) {
+    explicit lru_cache(uint32_t bucket = 8, uint32_t max_bucket = 1 << 20) {
         init(max_bucket);
         reserve(bucket);
     }
@@ -281,7 +290,7 @@ public:
             insert(*begin);
     }*/
 
-    lru_cache& operator=(const lru_cache& other) noexcept {
+    lru_cache& operator=(const lru_cache& other) {
         if (this == &other)
             return *this;
 
@@ -322,7 +331,7 @@ public:
         _sum_orderid = other._sum_orderid;
         auto opairs = other._pairs;
 
-        if (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value) {
+        if (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value) {
             memcpy(_pairs, opairs, (_num_buckets + 2) * sizeof(PairT));
         } else {
             for (uint32_t bucket = 0; bucket < _num_buckets; bucket++) {
@@ -334,7 +343,7 @@ public:
         }
     }
 
-    void swap(lru_cache& other) {
+    void swap(lru_cache& other) noexcept {
         std::swap(_hasher, other._hasher);
         std::swap(_eq, other._eq);
         std::swap(_pairs, other._pairs);
@@ -611,52 +620,6 @@ public:
         return insert(std::move(p.first), std::move(p.second));
     }
 
-#if 0
-    template <typename Iter>
-    void insert(Iter begin, Iter end)
-    {
-        reserve(std::distance(begin, end) + _num_filled);
-        for (; begin != end; ++begin) {
-            emplace(*begin);
-        }
-    }
-
-    void insert(std::initializer_list<value_type> ilist)
-    {
-        reserve(ilist.size() + _num_filled);
-        for (auto begin = ilist.begin(); begin != end; ++begin) {
-            emplace(*begin);
-        }
-    }
-
-    template <typename Iter>
-    void insert2(Iter begin, Iter end)
-    {
-        Iter citbeg = begin;
-        Iter citend = begin;
-        reserve(std::distance(begin, end) + _num_filled);
-        for (; begin != end; ++begin) {
-            if (try_insert_mainbucket(begin->first, begin->second) == INACTIVE) {
-                std::swap(*begin, *citend++);
-            }
-        }
-
-        for (; citbeg != citend; ++citbeg)
-            insert(*citbeg);
-    }
-
-    uint32_t try_insert_mainbucket(const KeyT& key, const ValueT& value)
-    {
-        const auto bucket = hash_bucket(key);
-        auto next_bucket = NEXT_BUCKET(_pairs, bucket);
-        if (next_bucket != INACTIVE)
-            return INACTIVE;
-
-        NEW_KVALUE(key, value, bucket);
-        return bucket;
-    }
-#endif
-
     template <typename Iter> void insert_unique(Iter begin, Iter end) {
         reserve(std::distance(begin, end) + _num_filled);
         for (; begin != end; ++begin) {
@@ -772,7 +735,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600 || __clang__
         return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #else
-        return !(std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #endif
     }
 
@@ -815,7 +778,7 @@ public:
 
     /// Make room for this many elements
     bool reserve(uint64_t num_elems) {
-        const auto required_buckets = (uint32_t)(num_elems * _loadlf >> 27);
+        const uint32_t required_buckets = static_cast<uint32_t>(num_elems * _loadlf >> 27);
         if (EMHASH_LIKELY(required_buckets < _num_buckets))
             return false;
 
@@ -876,7 +839,7 @@ public:
                  _num_filled, medium_id, sizeof(_pairs[0]), old_nums - _num_filled, load_factor(), (int)(clock() - ts));
 #if EMHASH_USE_LOG
         static uint32_t iremoves = 0;
-        FDLOG("lru_size") << __FUNCTION__ << " removes = " << iremoves++ << "|" << buff << endl;
+        FDLOG("lru_size") << __FUNCTION__ << " removes = " << iremoves++ << "|" << buff << std::endl;
 #else
         puts(buff);
 #endif
@@ -939,7 +902,7 @@ public:
                      entry<KeyT, ValueT>::next_orderid());
 #if EMHASH_USE_LOG
             static uint32_t ihashs = 0;
-            FDLOG() << "hash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << endl;
+            FDLOG() << "hash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << std::endl;
 #else
             puts(buff);
 #endif
@@ -1242,20 +1205,7 @@ private:
     // the first cache line packed
     template <typename UType, typename std::enable_if<std::is_integral<UType>::value, uint32_t>::type = 0>
     inline uint32_t hash_bucket(const UType key) const {
-#if 1
         return (uint32_t)hash64(key) & _mask;
-#elif EMHASH_SAFE_HASH
-        if (_hash_inter > 0)
-            return (uint32_t)hash64(key) & _mask;
-
-        return _hasher(key);
-#elif EMHASH_IDENTITY_HASH
-        return (key + (key >> (sizeof(UType) * 4))) & _mask;
-#elif WYHASH_LITTLE_ENDIAN0
-        return wyhash64(key, _num_buckets) & _mask;
-#else
-        return _hasher(key) & _mask;
-#endif
     }
 
     template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, uint32_t>::type = 0>

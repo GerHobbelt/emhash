@@ -253,8 +253,7 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask;
-        size_t _bucket;
+        size_t _bmask = 0;        size_t _bucket;
         size_t _from;
     };
 
@@ -323,19 +322,21 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask;
-        size_t _bucket;
+        size_t _bmask = 0;        size_t _bucket;
         size_t _from;
     };
 
     // ------------------------------------------------------------------------
 
-    HashMap(size_t n = 4, float lf = EMH_DEFAULT_LOAD_FACTOR) {
+    explicit HashMap(size_t n = 4, float lf = EMH_DEFAULT_LOAD_FACTOR) {
         _mlf = (uint32_t)((1 << 28) / lf);
         rehash(n);
     }
 
-    HashMap(const HashMap& other) { clone(other); }
+    HashMap(const HashMap& other) {
+        rehash(1);
+        clone(other);
+    }
 
     HashMap(HashMap&& other) {
         rehash(1);
@@ -373,7 +374,7 @@ public:
     ~HashMap() noexcept {
         clear_data();
         _num_filled = 0;
-        if (!need_explicit_dtor())
+        if (need_explicit_dtor())
             _pairs[_num_buckets].~PairT();
         free(_pairs);
     }
@@ -387,8 +388,16 @@ public:
         clear_data();
 
         if (other._num_buckets != _num_buckets) {
+            if (need_explicit_dtor() && _num_buckets > 0)
+                _pairs[_num_buckets].~PairT();
             _num_filled = _num_buckets = 0;
             rehash(other._num_buckets);
+            // rehash() constructed a default sentinel at _pairs[_num_buckets];
+            // destruct it so the copy section below can re-construct from other.
+            if (need_explicit_dtor())
+                _pairs[_num_buckets].~PairT();
+        } else if (need_explicit_dtor()) {
+            _pairs[_num_buckets].~PairT();
         }
 
         if (is_trivially_copyable()) {
@@ -597,7 +606,7 @@ public:
     }
 
     template <typename K, typename V> size_t insert_unique(K&& key, V&& val) noexcept {
-        const size_t required_buckets = ((size_t)_num_filled * _mlf >> 28);
+        const size_t required_buckets = static_cast<size_t>((uint64_t)_num_filled * _mlf >> 28);
         if (required_buckets >= _num_buckets)
             rehash(required_buckets + 2);
 
@@ -703,7 +712,7 @@ public:
 
     void _erase(size_t bucket) noexcept {
         _num_filled -= 1;
-        if (!need_explicit_dtor())
+        if (need_explicit_dtor())
             _pairs[bucket].~PairT();
 
 #if EMH_PSL_LINEAR
@@ -751,9 +760,9 @@ public:
 
     static constexpr bool need_explicit_dtor() {
 #if __cplusplus >= 201402L || _MSC_VER > 1600
-        return (std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
+        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #else
-        return (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return !(std::is_trivially_destructible<KeyT>::value && std::is_trivially_destructible<ValueT>::value);
 #endif
     }
 
@@ -761,7 +770,7 @@ public:
 #if __cplusplus >= 201402L || _MSC_VER > 1600
         return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #else
-        return (std::is_pod<KeyT>::value && std::is_pod<ValueT>::value);
+        return (std::is_trivially_copyable<KeyT>::value && std::is_trivially_copyable<ValueT>::value);
 #endif
     }
 
@@ -772,7 +781,7 @@ public:
     }
 
     void clear_data() noexcept {
-        if (!need_explicit_dtor() && _num_filled) {
+        if (need_explicit_dtor() && _num_filled) {
             for (auto it = begin(); _num_filled; ++it) {
                 const auto bucket = it.bucket();
                 _pairs[bucket].~PairT();
@@ -792,7 +801,7 @@ public:
     void shrink_to_fit() noexcept { rehash(_num_filled + 1); }
 
     bool reserve(size_t num_elems) {
-        const auto required_buckets = ((uint64_t)num_elems * _mlf >> 28);
+        const size_t required_buckets = static_cast<size_t>((uint64_t)num_elems * _mlf >> 28);
         if (EMH_LIKELY(required_buckets < _num_buckets))
             return false;
 
@@ -871,7 +880,7 @@ public:
             new (_pairs + num_buckets) PairT(KeyT(), ValueT());
             // size_t main_bucket;
             //_states[num_buckets] = hash_key2(main_bucket, _pairs[num_buckets].first) + 2; //iterator end tombstone:
-            if (old_buckets && !need_explicit_dtor())
+            if (old_buckets && need_explicit_dtor())
                 old_pairs[old_buckets].~PairT();
         }
 
@@ -885,7 +894,7 @@ public:
                 set_states(bucket, key_h2);
                 new (_pairs + bucket) PairT(std::move(src_pair));
                 _num_filled++;
-                if (!need_explicit_dtor())
+                if (need_explicit_dtor())
                     src_pair.~PairT();
             }
         }
@@ -929,14 +938,20 @@ private:
 
     inline size_t get_next_bucket(size_t next_bucket, size_t offset) const {
 #if EMH_SAFE_PSL
-        next_bucket += simd_bytes * offset;
+        next_bucket += simd_bytes * offset | 1;
 #elif EMH_PSL_LINEAR == 0
-        next_bucket += offset < 5 ? simd_bytes * offset : _num_buckets / 11 + 1;
+        if (offset < 5)
+            next_bucket += simd_bytes * offset;
+        else {
+            // Use a prime-like step to ensure all buckets are reachable
+            // (_num_buckets is always a power of 2, so odd step guarantees full coverage)
+            next_bucket += (_num_buckets / 11) | 1;
+        }
 #elif EMH_PSL_LINEAR == 1
         if (offset < 8)
             next_bucket += simd_bytes * 2 + offset;
         else
-            next_bucket += _num_buckets / 32 + 1;
+            next_bucket += (_num_buckets / 32) | 1;
 #else
         next_bucket += simd_bytes;
 #endif
@@ -998,7 +1013,7 @@ private:
     // Find the main_bucket with this key, or return a good empty main_bucket to place the key in.
     // In the later case, the main_bucket is expected to be filled.
     template <typename K> size_t find_or_allocate(const K& key, bool& bnew) noexcept {
-        const size_t required_buckets = ((size_t)_num_filled * _mlf >> 28);
+        const size_t required_buckets = static_cast<size_t>((uint64_t)_num_filled * _mlf >> 28);
         if (required_buckets >= _num_buckets)
             rehash(required_buckets + 2);
 
