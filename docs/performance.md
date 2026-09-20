@@ -27,9 +27,9 @@ emhash7::HashMap<int64_t, int> myhash(1 << 20, 0.999f);
 ### How it works
 
 ```cpp
-// Compile: g++ -O3 -march=native -I../include -I../thirdparty -std=c++17 -DEMH_HIGH_LOAD=123456 highload_bench.cpp
+// Compile: g++ -O3 -march=native -I../include -I../thirdparty -std=c++17 -DEMH_HIGH_LOAD=123456 comprehensive_bench.cpp
 
-#include "hash_table7.hpp"
+#include "emhash/hash_table7.hpp"
 
 static void RunHighLoadFactor()
 {
@@ -59,7 +59,7 @@ static void RunHighLoadFactor()
 }
 ```
 
-Full benchmark code with multi-version comparison: [bench/highload_bench.cpp](https://github.com/ktprime/emhash/blob/master/bench/highload_bench.cpp)
+Full benchmark code with multi-version comparison: [bench/comprehensive_bench.cpp](https://github.com/ktprime/emhash/blob/master/bench/comprehensive_bench.cpp)
 
 ### Real benchmark results (1M buckets, LF=0.999, compiled with `-DEMH_HIGH_LOAD=123456`)
 
@@ -79,3 +79,17 @@ Test Environment: AMD 5800H / Windows 10 / GCC 11.3
 | emhash5::HashMap |       17 |        17 |        1 | 99.9 |
 
 > Other hash maps (absl, phmap, ska, tsl, robin_hood) cannot run at 0.999 LF — they either cap max_load_factor at ~0.875 or suffer catastrophic clustering.
+
+## Performance Charts
+
+### Integer Key Performance
+
+![int64_t benchmark](images/int64_t.png)
+
+### String Key Performance
+
+![string benchmark](images/string_int.png)
+
+### Structure Layout
+
+![Struct layout](images/Struct_int64_t.png)

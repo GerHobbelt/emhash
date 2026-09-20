@@ -25,13 +25,13 @@ The API is largely compatible with `std::unordered_map`.
 | Method | Notes |
 |--------|-------|
 | `operator[]` | Identical behavior |
-| `at()` | Identical behavior (but UB on missing key in emhash) |
+| `at()` | Identical behavior (throws `std::out_of_range` on missing key, same as std::unordered_map) |
 | `insert()` | Identical behavior |
 | `emplace()` | Identical behavior |
 | `erase(key)` | Identical behavior |
 | `erase(it)` | Identical behavior |
 | `find()` | Identical behavior |
-| `contains()` | C++20 method, works in C++17 with emhash |
+| `contains()` | Standard C++20 method, emhash also provides it under C++17 |
 | `count()` | Identical behavior |
 | `size()` / `empty()` | Identical behavior |
 | `clear()` | Identical behavior |
@@ -48,11 +48,11 @@ The API is largely compatible with `std::unordered_map`.
 |---------|---------------------|--------|
 | **Reference stability** | Guaranteed (node-based) | **Not guaranteed** (open addressing) |
 | **Iterator invalidation** | Only on erase of that element | On any insert/erase/rehash |
-| **`at()` on missing key** | Throws `std::out_of_range` | **Undefined behavior** |
-| **`max_load_factor()`** | Can be set freely | Fixed at compile time (0.80 default) |
-| **`bucket()` / `bucket_size()`** | Available | Not available |
-| **`equal_range()`** | Available | Not available |
-| **`merge()`** | Available (C++17) | Not available |
+| **`at()` on missing key** | Throws `std::out_of_range` | Throws `std::out_of_range` (same as std) |
+| **`max_load_factor()`** | Can be set freely | Settable at runtime (0.80 default, up to 0.999 with `EMH_HIGH_LOAD`) |
+| **`bucket()` / `bucket_size()`** | Available | Available only with `EMH_STATIS` compile flag |
+| **`equal_range()`** | Available | Available (emhash8) |
+| **`merge()`** | Available (C++17) | Available (emhash8) |
 | **Node handle** | Available (C++17) | Not available |
 
 ### emhash-Only Methods (Not in std::unordered_map)
@@ -61,9 +61,9 @@ The API is largely compatible with `std::unordered_map`.
 |--------|-------------|
 | `insert_unique(key, val)` | Direct insert without lookup — faster when key is guaranteed unique |
 | `try_get(key)` | Returns `ValueT*` (`nullptr` if not found) — avoids exception overhead |
-| `try_set(key, val)` | Sets value only if key does not exist (emhash5/8) |
+| `try_set(key, val)` | Set value if key exists, do nothing if it doesn't (emhash5/8) |
 | `set_get(key, val)` | Sets new value, returns old value (emhash5/8) |
-| `_erase(key)` | Erase returning void — slightly faster than `erase()` |
+| `_erase(it)` | Erase by iterator returning void — slightly faster than `erase()` (emhash7 only) |
 | `shrink_to_fit()` | Releases unused memory |
 
 ## Common Migration Patterns
@@ -154,6 +154,49 @@ Typical speedup when migrating from `std::unordered_map`:
 ## What NOT to Do
 
 1. **Don't store references/pointers to elements** — they may be invalidated
-2. **Don't rely on `at()` throwing** — emhash's `at()` is UB on missing keys
+2. **Don't use `at()` for hot-path lookups** — emhash's `at()` throws `std::out_of_range` (same as std) which incurs exception overhead; prefer `try_get()` for performance-critical code
 3. **Don't use `bucket()` / `bucket_size()`** — not available in open addressing
 4. **Don't assume iterator stability** — any modification may invalidate all iterators
+
+---
+
+## Upgrading from emhash < 1.1.0
+
+If you are upgrading from an older version where headers were in the repository root:
+
+### Include path changes
+
+```cpp
+// Old (before v1.1.0)
+#include "hash_table7.hpp"
+
+// New (v1.1.0+)
+#include "emhash/hash_table7.hpp"
+```
+
+### Compiler flags
+
+```bash
+# Old
+g++ -I/path/to/emhash ...
+
+# New
+g++ -I/path/to/emhash/include ...
+```
+
+### CMake
+
+No changes needed if using `find_package(emhash)`. The CMake config automatically provides the correct include paths.
+
+### Header files moved
+
+| Old location | New location |
+|---|---|
+| `hash_table5.hpp` | `include/emhash/hash_table5.hpp` |
+| `hash_table6.hpp` | `include/emhash/hash_table6.hpp` |
+| `hash_table7.hpp` | `include/emhash/hash_table7.hpp` |
+| `hash_table8.hpp` | `include/emhash/hash_table8.hpp` |
+| `hash_set2.hpp` | `include/emhash/hash_set2.hpp` |
+| `hash_set3.hpp` | `include/emhash/hash_set3.hpp` |
+| `hash_set4.hpp` | `include/emhash/hash_set4.hpp` |
+| `hash_set8.hpp` | `include/emhash/hash_set8.hpp` |

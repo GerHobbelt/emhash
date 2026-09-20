@@ -12,7 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/adr/` directory with initial 4 ADRs (open addressing, emhash8 layout, no-tombstone emhash7, header-only)
 - `docs/performance_tracking.md` for tracking benchmark results across versions
 - `.github/workflows/format-check.yml` — clang-format LLVM style check on PRs
-- `.github/workflows/warnings-check.yml` — strict warnings build matrix (gcc/clang × c++17/20)
 - `.github/workflows/release.yml` — automatic GitHub Release creation on tag push
 - `.github/workflows/ci.yml` — added `compat` job with multi-version compiler matrix (GCC 11-13, Clang 16-18, C++17/20)
 - `.github/dependabot.yml` — monthly GitHub Actions dependency updates
@@ -21,8 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.editorconfig` — consistent editor settings across IDEs
 - CMake: version from `VERSION` file, `emhashConfigVersion.cmake`, complete header list
 - `conanfile.py` — Conan package manager support
-- `scripts/vcpkg/` — vcpkg port definition (ready for submission)
-- `scripts/amalgamate.sh` — generate single-header distributions
+- `docs/vcpkg/` — vcpkg port definition (ready for submission)
+- `docs/amalgamate.sh` — generate single-header distributions
 - `docs/mkdocs.yml` — MkDocs Material configuration for documentation site
 - Doxygen class-level documentation for `hash_table7.hpp` and `hash_table8.hpp`
 - Cross-links from README to new docs/adr/ and PERFORMANCE_TRACKING.md
@@ -30,12 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/faq.md` — Frequently asked questions
 - `docs/migration_guide.md` — Migration guide from std::unordered_map
 - `scripts/pre-commit.sh` — Git pre-commit hook for clang-format checking
-- README: added CI status and version badges, FAQ and migration guide links
-- `quick_bench.cpp` — zero-dependency quick benchmark (emhash7/8 vs std::unordered_map)
-- `docs/performance_tips.md` — performance tuning guide (compile flags, pre-allocation, hash selection, anti-patterns)
-- `docs/faq.md` — frequently asked questions
-- `docs/migration_guide.md` — migration guide from std::unordered_map
-- `examples/CMakeLists.txt` — CMake build for all examples + quick_bench
+- `docs/examples/CMakeLists.txt` — CMake build for all examples + quick_bench
 - Method-level Doxygen for hash_table8.hpp core API (contains, try_get, try_set, insert_unique, set_get, erase)
 
 ### Changed

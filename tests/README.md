@@ -38,39 +38,6 @@ cmake -B build -DENABLE_FUZZ_TESTS=ON
 cmake --build build
 ```
 
-### Using Makefile (Linux/WSL)
-
-```bash
-cd tests
-
-# Show available targets
-make help
-
-# Quick validation tests (~20 seconds)
-make quick
-
-# Stress tests (~1 minute)
-make stress
-
-# Hash attack tests (~2 minutes)
-make attack
-
-# Debug tests
-make debug
-
-# Run all tests
-make all
-
-# Clean all binaries
-make clean
-
-# Use clang compiler
-make quick CXX=clang++
-
-# Build with ASan
-make asan_verify
-```
-
 ### Manual Compilation (Linux/WSL)
 
 ```bash
@@ -88,8 +55,8 @@ g++ -std=c++17 -O2 -DEMH_SAFE_PSL -I../include attack/hash_attack_all.cpp -o tes
 # Debug tests (~10 seconds)
 g++ -std=c++17 -g -O0 -I../include debug/debug_all_maps.cpp -o test_debug && ./test_debug
 
-# Fuzz tests (requires clang+libfuzzer)
-clang++ -fsanitize=fuzzer,address -std=c++17 -I../include fuzz/fuzz_emilib_all.cpp -o test_fuzz
+# Fuzz tests (requires clang+libfuzzer; source files are generated locally)
+clang++ -fsanitize=fuzzer,address -std=c++17 -I../include fuzz/fuzz_emhash8.cpp -o test_fuzz
 ./test_fuzz -max_total_time=60
 ```
 
@@ -118,7 +85,7 @@ cl /std:c++17 /O2 /DEMH_SAFE_PSL /I../include attack\hash_attack_all.cpp /Fe:tes
 | `stress/stress_all_maps.cpp` | 7 maps x 5 items x 1000 trials | 35,000 trials | ~30s |
 | `attack/hash_attack_all.cpp` | 7 maps x 3 hash attacks | correctness+performance | ~2min |
 | `debug/debug_all_maps.cpp` | 7 maps x 10 debug tests | 70 tests | ~10s |
-| `fuzz/fuzz_emilib_all.cpp` | emihmap1/2/3 fuzzing (requires clang) | - | - |
+| `fuzz/fuzz_emhash8.cpp` | emhash8 fuzzing (requires clang, generated locally) | - | - |
 
 ---
 
@@ -133,7 +100,6 @@ tests/
 ├── fuzz/              # Fuzzing tests (requires clang + libfuzzer)
 ├── scripts/           # Build scripts (build_tests.sh, build_tests.ps1, run_all.sh)
 ├── CMakeLists.txt     # CMake build configuration
-├── Makefile           # GNU Make build configuration
 └── README.md          # This document
 ```
 
@@ -233,22 +199,29 @@ Comprehensive validation tests for all emhash versions. No third-party dependenc
 
 ## 5. fuzz/ — Fuzzing Tests
 
+> **Note**: Most fuzz source files (`fuzz_*.cpp`) are not currently tracked in git.
+> They are generated during fuzzing sessions and stored locally. Only `reproduce_emhash8_bug.cpp`
+> is tracked. To add fuzz tests, create `fuzz_*.cpp` files and enable `ENABLE_FUZZ_TESTS` in CMake.
+
+| File | Purpose | Compile Command |
+|------|---------|-----------------|
+| `reproduce_emhash8_bug.cpp` | Reproduce emhash8 bug from fuzzer | `g++ -std=c++17 -I../include reproduce_emhash8_bug.cpp -o reproduce_bug` |
+
+**Planned fuzz targets** (create these files to enable):
+
 | File | Purpose | Compile Command |
 |------|---------|-----------------|
 | `fuzz_emhash_all.cpp` | Test all emhash versions (5/6/7/8) | `clang++ -fsanitize=fuzzer,address -std=c++17 -I../include fuzz_emhash_all.cpp -o fuzz_all` |
-| `fuzz_emhash8.cpp` | emhash8 basic fuzzer | `clang++ -fsanitize=fuzzer,address -std=c++17 -I../include fuzz_emhash8.cpp -o fuzz8` |
-| `fuzz_emhash8_advanced.cpp` | Advanced fuzzer with variable hasher | `clang++ -fsanitize=fuzzer,address -std=c++17 -I../include fuzz_emhash8_advanced.cpp -o fuzz8_adv` |
-| `fuzz_extreme.cpp` | Extreme tests: 100% collision, high LF | `g++ -fsanitize=address,undefined -std=c++17 -I../include fuzz_extreme.cpp fuzz_main.cpp -o fuzz_extreme_asan` |
-| `fuzz_nocoll.cpp` | No-collision boundary tests | `g++ -fsanitize=address,undefined -std=c++17 -I../include fuzz_nocoll.cpp fuzz_main.cpp -o fuzz_nocoll_asan` |
 | `fuzz_emilib_all.cpp` | emihmap1/2/3 fuzzing | `clang++ -fsanitize=fuzzer,address -std=c++17 -I../include fuzz_emilib_all.cpp -o test_fuzz` |
+| `fuzz_extreme.cpp` | Extreme tests: 100% collision, high LF | `g++ -fsanitize=address,undefined -std=c++17 -I../include fuzz_extreme.cpp fuzz_main.cpp -o fuzz_extreme_asan` |
 
 **Run Examples**:
 ```bash
-# Fuzzer (requires clang)
-./fuzz8 -max_total_time=60 corpus/
+# Reproduce known bug
+./reproduce_bug
 
-# Non-fuzzer version (works with gcc)
-./fuzz_extreme_asan
+# Fuzzer (requires clang + fuzz source files)
+./fuzz8 -max_total_time=60 corpus/
 ```
 
 ---

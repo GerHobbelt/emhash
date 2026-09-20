@@ -20,6 +20,9 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+      - name: Generate amalgamated header
+        run: bash scripts/amalgamate.sh ${{ steps.version.outputs.VERSION }}
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
@@ -28,25 +31,5 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           generate_release_notes: true
-          body: |
-            ## Changes
-
-            See [CHANGELOG.md](https://github.com/ktprime/emhash/blob/main/CHANGELOG.md) for details.
-
-            ## Installation
-
-            ```bash
-            # Option 1: Copy header directly
-            cp hash_table7.hpp /your/project/
-
-            # Option 2: CMake FetchContent
-            include(FetchContent)
-            FetchContent_Declare(emhash GIT_REPOSITORY https://github.com/ktprime/emhash.git GIT_TAG ${{ github.ref_name }})
-            FetchContent_MakeAvailable(emhash)
-
-            # Option 3: CMake install + find_package
-            cmake -B build && cmake --build build --target install
-            # Then in your project:
-            # find_package(emhash REQUIRED)
-            # target_link_libraries(myapp PRIVATE emhash::emhash)
-            ```
+          files: |
+            dist/emhash.hpp
