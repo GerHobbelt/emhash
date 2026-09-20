@@ -318,6 +318,13 @@ public:
     using PairT = entry<KeyT, ValueT>;
 #endif
 
+    // Bitmask front layout requires EMH_MALIGN-aligned _pairs pointer.
+    // alloc_bucket returns alignof(PairT)-aligned memory; bitmask_aligned_size
+    // rounds up to EMH_MALIGN. If alignof(PairT) > EMH_MALIGN, _pairs may be
+    // misaligned. This static_assert catches that at compile time.
+    static_assert(alignof(PairT) <= EMH_MALIGN,
+                  "PairT alignment exceeds EMH_MALIGN; increase EMH_MALIGN or use a type with smaller alignment");
+
     using key_type = KeyT;
     using val_type = ValueT;
     using mapped_type = ValueT;
@@ -1245,10 +1252,14 @@ public:
     static void prefetch_heap_block(char* ctrl) {
         // Prefetch the heap-allocated memory region to resolve potential TLB
         // misses.  This is intended to overlap with execution of calculating the hash for a key.
+#ifndef EMH_NO_READ_PREFETCH
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
         _mm_prefetch(static_cast<const char*>(ctrl), _MM_HINT_T0);
 #elif defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl));
+#endif
+#else
+        (void)ctrl;
 #endif
     }
 
@@ -1458,6 +1469,7 @@ private:
             const auto nbucket = EMH_BUCKET(_pairs, next_bucket);
             if (nbucket == next_bucket)
                 break;
+            prefetch_heap_block(reinterpret_cast<char*>(&_pairs[nbucket]));
             next_bucket = nbucket;
         }
 
@@ -1480,6 +1492,7 @@ private:
             const auto nbucket = EMH_BUCKET(_pairs, next_bucket);
             if (nbucket == next_bucket)
                 return _num_buckets;
+            prefetch_heap_block(reinterpret_cast<char*>(&_pairs[nbucket]));
             next_bucket = nbucket;
         }
 
@@ -1558,6 +1571,7 @@ private:
             const auto nbucket = EMH_BUCKET(_pairs, next_bucket);
             if (nbucket == next_bucket)
                 break;
+            prefetch_heap_block(reinterpret_cast<char*>(&_pairs[nbucket]));
             next_bucket = nbucket;
         }
 
@@ -1721,33 +1735,26 @@ private:
     }
 #endif
 
-    template <typename UType, typename std::enable_if<std::is_integral<UType>::value, size_type>::type = 0>
-    EMH_INLINE size_type hash_key(const UType key) const {
+    template <typename K> EMH_INLINE size_type hash_key(const K& key) const {
+        if constexpr (std::is_integral<K>::value) {
 #if EMH_INT_HASH
-        return static_cast<size_type>(hash64(key));
+            return static_cast<size_type>(hash64(key));
 #elif EMH_IDENTITY_HASH
-        return static_cast<size_type>(key + (key >> 24));
+            return static_cast<size_type>(key + (key >> 24));
 #else
-        return static_cast<size_type>(_hasher(key));
+            return static_cast<size_type>(_hasher(key));
 #endif
-    }
-
-    template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, size_type>::type = 0>
-    EMH_INLINE size_type hash_key(const UType& key) const {
-        EMH_MSAN_UNPOISON(&key, sizeof(key));
-        EMH_MSAN_UNPOISON(key.data(), key.size());
+        } else if constexpr (std::is_same<K, std::string>::value) {
+            EMH_MSAN_UNPOISON(&key, sizeof(key));
+            EMH_MSAN_UNPOISON(key.data(), key.size());
 #if EMH_WY_HASH
-        return static_cast<size_type>(emh_wyhash(key.data(), key.size(), 0));
+            return static_cast<size_type>(emh_wyhash(key.data(), key.size(), 0));
 #else
-        return static_cast<size_type>(_hasher(key));
+            return static_cast<size_type>(_hasher(key));
 #endif
-    }
-
-    template <typename UType,
-              typename std::enable_if<!std::is_integral<UType>::value && !std::is_same<UType, std::string>::value,
-                                      size_type>::type = 0>
-    EMH_INLINE size_type hash_key(const UType& key) const {
-        return static_cast<size_type>(_hasher(key));
+        } else {
+            return static_cast<size_type>(_hasher(key));
+        }
     }
 
     // Safe inline replacements for EMH_SET/EMH_CLS/EMH_EMPTY macros:
@@ -1764,14 +1771,13 @@ private:
     using bit_type = uint8_t; // uint8_t uint16_t, uint32_t.
     bit_type* _bitmask;
     PairT* _pairs;
+    size_type _mask;
+    size_type _num_buckets;
+    size_type _num_filled;
+    uint32_t _mlf;
     HashT _hasher;
     EqT _eq;
     PairAlloc _alloc;
-    size_type _mask;
-    size_type _num_buckets;
-
-    size_type _num_filled;
-    uint32_t _mlf;
 
 private:
     static constexpr uint32_t BIT_PACK = sizeof(uint64_t);

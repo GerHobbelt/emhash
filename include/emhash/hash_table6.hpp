@@ -265,6 +265,13 @@ public:
     using PairT = entry<KeyT, ValueT>;
 #endif
 
+    // Bitmask front layout requires EMH_MALIGN-aligned _pairs pointer.
+    // alloc_bucket returns alignof(PairT)-aligned memory; bitmask_aligned_size
+    // rounds up to EMH_MALIGN. If alignof(PairT) > EMH_MALIGN, _pairs may be
+    // misaligned. This static_assert catches that at compile time.
+    static_assert(alignof(PairT) <= EMH_MALIGN,
+                  "PairT alignment exceeds EMH_MALIGN; increase EMH_MALIGN or use a type with smaller alignment");
+
     using key_type = KeyT;
     using val_type = ValueT;
     using mapped_type = ValueT;
@@ -1603,19 +1610,23 @@ private:
         const auto qmask = _mask / SIZE_BIT;
         if (0) {
             const auto step = (bucket_from - SIZE_BIT / 4) & qmask;
-            const auto bmask3 = *(reinterpret_cast<size_t*>(_bitmask) + step);
+            size_t bmask3;
+            memcpy(&bmask3, _bitmask + step * sizeof(size_t), sizeof(bmask3));
             if (bmask3 != 0)
                 return step * SIZE_BIT + CTZ(bmask3);
         }
 
         auto& last = EMH_ADDR(_pairs, _mask + 1);
         while (true) {
-            const auto bmask2 = *(reinterpret_cast<size_t*>(_bitmask) + last);
+            last &= qmask;
+            size_t bmask2;
+            memcpy(&bmask2, _bitmask + last * sizeof(size_t), sizeof(bmask2));
             if (bmask2 != 0)
                 return last * SIZE_BIT + CTZ(bmask2);
 
             const auto next = (qmask / 2 + last) & qmask;
-            const auto bmask1 = *(reinterpret_cast<size_t*>(_bitmask) + next);
+            size_t bmask1;
+            memcpy(&bmask1, _bitmask + next * sizeof(size_t), sizeof(bmask1));
             if (bmask1 != 0) {
                 last = next;
                 return next * SIZE_BIT + CTZ(bmask1);
@@ -1714,35 +1725,28 @@ private:
 
     EMH_INLINE size_type hash_main(const size_type bucket) const { return hash_key(EMH_KEY(_pairs, bucket)) & _mask; }
 
-    template <typename UType, typename std::enable_if<std::is_integral<UType>::value, size_type>::type = 0>
-    EMH_INLINE size_type hash_key(const UType key) const {
+    template <typename K> EMH_INLINE size_type hash_key(const K& key) const {
+        if constexpr (std::is_integral<K>::value) {
 #if EMH_INT_HASH
-        return static_cast<size_type>(hash64(key));
+            return static_cast<size_type>(hash64(key));
 #elif EMH_SAFE_HASH
-        return static_cast<size_type>(_hash_inter == 0 ? _hasher(key) : hash64(key));
+            return static_cast<size_type>(_hash_inter == 0 ? _hasher(key) : hash64(key));
 #elif EMH_IDENTITY_HASH
-        return static_cast<size_type>(key + (key >> 24));
+            return static_cast<size_type>(key + (key >> 24));
 #else
-        return static_cast<size_type>(_hasher(key));
+            return static_cast<size_type>(_hasher(key));
 #endif
-    }
-
-    template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, size_type>::type = 0>
-    EMH_INLINE size_type hash_key(const UType& key) const {
-        EMH_MSAN_UNPOISON(&key, sizeof(key));
-        EMH_MSAN_UNPOISON(key.data(), key.size());
+        } else if constexpr (std::is_same<K, std::string>::value) {
+            EMH_MSAN_UNPOISON(&key, sizeof(key));
+            EMH_MSAN_UNPOISON(key.data(), key.size());
 #if EMH_WY_HASH
-        return static_cast<size_type>(wyhash(key.data(), key.size(), 0));
+            return static_cast<size_type>(wyhash(key.data(), key.size(), 0));
 #else
-        return static_cast<size_type>(_hasher(key));
+            return static_cast<size_type>(_hasher(key));
 #endif
-    }
-
-    template <typename UType,
-              typename std::enable_if<!std::is_integral<UType>::value && !std::is_same<UType, std::string>::value,
-                                      size_type>::type = 0>
-    EMH_INLINE size_type hash_key(const UType& key) const {
-        return static_cast<size_type>(_hasher(key));
+        } else {
+            return static_cast<size_type>(_hasher(key));
+        }
     }
 
     // 8 * 2 + 4 * 5 = 16 + 20 = 32
@@ -1766,12 +1770,12 @@ private:
 
     uint8_t* _bitmask;
     PairT* _pairs;
-    HashT _hasher;
-    EqT _eq;
-    PairAlloc _alloc;
     size_type _mask;
     size_type _num_filled;
     uint32_t _mlf;
+    HashT _hasher;
+    EqT _eq;
+    PairAlloc _alloc;
 
 #if EMH_SAFE_HASH
     size_type _num_main;

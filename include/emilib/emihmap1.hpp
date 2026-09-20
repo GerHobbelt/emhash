@@ -764,7 +764,7 @@ public:
         _num_filled = 0;
     }
 
-    void shrink_to_fit() { rehash(_num_filled + 1); }
+    void shrink_to_fit() { rehash(_num_filled + _num_filled / MXLOAD_FACTOR + 1); }
 
     bool reserve(size_t num_elems) noexcept {
         size_t required_buckets = num_elems + num_elems / MXLOAD_FACTOR;
@@ -867,7 +867,9 @@ private:
 #elif defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl));
 #endif
-#endif // EMH_NO_READ_PREFETCH
+#else
+        (void)ctrl;
+#endif
     }
 
     // Prefetch for write operations (insert/erase)
@@ -878,7 +880,9 @@ private:
 #elif defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl), 1, 1);
 #endif
-#endif // EMH_NO_WRITE_PREFETCH
+#else
+        (void)ctrl;
+#endif
     }
 
     // Legacy function for backward compatibility
@@ -889,7 +893,9 @@ private:
 #elif defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl));
 #endif
-#endif // EMH_NO_PREFETCH
+#else
+        (void)ctrl;
+#endif
     }
 
     inline bool group_has_empty(size_t bucket) const noexcept {

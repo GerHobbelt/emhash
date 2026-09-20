@@ -108,6 +108,10 @@ public:
 
     constexpr static size_type INACTIVE = size_type(-1);
     constexpr static size_type EAD = 2;
+    // Extra slots reserved beyond _num_filled to avoid immediate rehash on next insert
+    constexpr static size_type RESERVE_SLOTS = 2;
+    // Extra capacity buffer for pairs allocation (prevents frequent realloc on growth)
+    constexpr static size_type PAIRS_CAPACITY_BUFFER = 4;
 
     struct Index {
         size_type next;
@@ -255,7 +259,7 @@ public:
             _index = alloc_index(rhs._num_buckets);
             clone(rhs);
         } else {
-            init(rhs._num_filled + 2, rhs.max_load_factor());
+            init(rhs._num_filled + RESERVE_SLOTS, rhs.max_load_factor());
             for (auto it = rhs.begin(); it != rhs.end(); ++it)
                 insert_unique(*it);
         }
@@ -293,7 +297,7 @@ public:
             _index = alloc_index(rhs._num_buckets);
             clone(rhs);
         } else {
-            init(rhs._num_filled + 2, rhs.max_load_factor());
+            init(rhs._num_filled + RESERVE_SLOTS, rhs.max_load_factor());
             for (auto it = rhs.begin(); it != rhs.end(); ++it)
                 insert_unique(*it);
         }
@@ -318,7 +322,7 @@ public:
             dealloc_bucket(_pairs, _pairs_capacity);
             _pairs = nullptr;
             _pairs_capacity = 0;
-            rehash(rhs._num_filled + 2);
+            rehash(rhs._num_filled + RESERVE_SLOTS);
             for (auto it = rhs.begin(); it != rhs.end(); ++it)
                 insert_unique(*it);
             return *this;
@@ -454,17 +458,17 @@ public:
     constexpr const_iterator cend() const { return {this, _num_filled}; }
     constexpr const_iterator end() const { return cend(); }
 
-    const value_type* values() const { return _pairs; }
-    const Index* index() const { return _index; }
+    const value_type* values() const noexcept { return _pairs; }
+    const Index* index() const noexcept { return _index; }
 
-    size_type size() const { return _num_filled; }
-    bool empty() const { return _num_filled == 0; }
-    size_type bucket_count() const { return _num_buckets; }
-    float load_factor() const { return static_cast<float>(_num_filled) / (static_cast<float>(_mask) + 1.0f); }
+    size_type size() const noexcept { return _num_filled; }
+    bool empty() const noexcept { return _num_filled == 0; }
+    size_type bucket_count() const noexcept { return _num_buckets; }
+    float load_factor() const noexcept { return static_cast<float>(_num_filled) / (static_cast<float>(_mask) + 1.0f); }
 
-    const HashT& hash_function() const { return _hasher; }
-    const EqT& key_eq() const { return _eq; }
-    allocator_type get_allocator() const { return allocator_type(_pair_allocator); }
+    const HashT& hash_function() const noexcept { return _hasher; }
+    const EqT& key_eq() const noexcept { return _eq; }
+    allocator_type get_allocator() const noexcept { return allocator_type(_pair_allocator); }
 
     void max_load_factor(float mlf) {
         if (mlf < 0.992f && mlf > EMH_MIN_LOAD_FACTOR) {
@@ -474,9 +478,9 @@ public:
         }
     }
 
-    constexpr float max_load_factor() const { return (1 << 27) / static_cast<float>(_mlf); }
-    constexpr uint64_t max_size() const { return 1ull << (sizeof(_num_buckets) * 8 - 1); }
-    constexpr uint64_t max_bucket_count() const { return max_size(); }
+    constexpr float max_load_factor() const noexcept { return (1 << 27) / static_cast<float>(_mlf); }
+    constexpr uint64_t max_size() const noexcept { return 1ull << (sizeof(_num_buckets) * 8 - 1); }
+    constexpr uint64_t max_bucket_count() const noexcept { return max_size(); }
 
 #if EMH_STATIS
     // Returns the bucket number where the element with key k is located.
@@ -916,7 +920,7 @@ public:
             dump_statics();
 #endif
 
-        rehash(required_buckets + 2);
+        rehash(required_buckets + RESERVE_SLOTS);
         return true;
     }
 
@@ -957,9 +961,10 @@ public:
 
     void rebuild(size_type num_buckets, size_type required_buckets, size_type old_num_buckets) noexcept {
         dealloc_index(_index, old_num_buckets);
-        const auto need_size = std::max(
-            static_cast<size_type>(static_cast<double>(num_buckets) * static_cast<double>(max_load_factor())) + 4,
-            required_buckets + 2);
+        const auto need_size =
+            std::max(static_cast<size_type>(static_cast<double>(num_buckets) * static_cast<double>(max_load_factor())) +
+                         PAIRS_CAPACITY_BUFFER,
+                     required_buckets + RESERVE_SLOTS);
         auto new_pairs = alloc_bucket(need_size);
         if (is_trivially_copyable()) {
             if (_pairs)
@@ -1067,12 +1072,16 @@ private:
     static void prefetch_heap_block(char* ctrl) {
         // Prefetch the heap-allocated memory region to resolve potential TLB
         // misses.  This is intended to overlap with execution of calculating the hash for a key.
+#ifndef EMH_NO_READ_PREFETCH
 #if defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl), 0, 1);
 #elif _WIN32 && defined(_M_ARM64)
         __prefetch(static_cast<const char*>(ctrl));
 #elif _WIN32
         _mm_prefetch(static_cast<const char*>(ctrl), _MM_HINT_T0);
+#endif
+#else
+        (void)ctrl;
 #endif
     }
 
@@ -1614,40 +1623,30 @@ public:
 #endif
 
 private:
-    template <typename UType, typename std::enable_if<std::is_integral<UType>::value, uint32_t>::type = 0>
-    inline uint64_t hash_key(const UType key) const {
+    template <typename K> inline uint64_t hash_key(const K& key) const {
+        if constexpr (std::is_integral<K>::value) {
 #if EMH_INT_HASH
-        return hash64(key);
+            return hash64(key);
 #else
-        return _hasher(key);
+            return _hasher(key);
 #endif
-    }
-
-    template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, uint32_t>::type = 0>
-    inline uint64_t hash_key(const UType& key) const {
-        EMH_MSAN_UNPOISON(&key, sizeof(key));
-        EMH_MSAN_UNPOISON(key.data(), key.size());
+        } else if constexpr (std::is_same<K, std::string>::value) {
+            EMH_MSAN_UNPOISON(&key, sizeof(key));
+            EMH_MSAN_UNPOISON(key.data(), key.size());
 #if EMH_WYHASH_HASH
-        return wyhashstr(key.data(), key.size());
+            return wyhashstr(key.data(), key.size());
 #else
-        return _hasher(key);
+            return _hasher(key);
 #endif
-    }
-
-    template <typename UType,
-              typename std::enable_if<!std::is_integral<UType>::value && !std::is_same<UType, std::string>::value,
-                                      uint32_t>::type = 0>
-    inline uint64_t hash_key(const UType& key) const {
-        return _hasher(key);
+        } else {
+            return _hasher(key);
+        }
     }
 
 private:
     Index* _index;
     value_type* _pairs;
 
-    HashT _hasher;
-    EqT _eq;
-    uint32_t _mlf;
     size_type _mask;
     size_type _num_buckets;
     size_type _num_filled;
@@ -1657,6 +1656,9 @@ private:
 #endif
     size_type _etail;
     size_type _pairs_capacity;
+    uint32_t _mlf;
+    HashT _hasher;
+    EqT _eq;
     PairAlloc _pair_allocator;
     IndexAlloc _index_allocator;
 };

@@ -18,7 +18,7 @@
 | Collision resolution | Linked-bucket chains | Swiss-table-style byte probing |
 | SIMD usage | Limited (CTZ/bitmask) | Pervasive (H2 tag filtering, iteration) |
 | Best for | General purpose, high load factor | SIMD-friendly keys, read-heavy |
-| Load factor | Default 0.80, up to 0.999 | emihmap1: fixed 0.833; emihmap2/3: 0.25–0.999 |
+| Load factor | Default 0.80, up to 0.999 | emihmap1: fixed 5/6 ≈ 0.833; emihmap2/3: 0.25–0.999; emihmap4: fixed 0.875 |
 
 ### Which emilib version should I use?
 
@@ -80,7 +80,7 @@ For emilib implementations, use `EMH_SAFE_PSL=1` to limit probe sequence length.
 
 1. **Open addressing** — single contiguous array, better cache locality
 2. **No per-element heap allocation** — `std::unordered_map` allocates a node per element
-3. **No tombstones** (emhash7) — no performance degradation from frequent erase
+3. **No tombstones** (all emhash versions) — no performance degradation from frequent erase
 4. **Smart collision resolution** — hybrid probing strategies
 
 ### Why is emhash8 iteration so fast?

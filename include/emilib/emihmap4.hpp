@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
+#include <cstddef>
 #include <cmath>
 #include <stdexcept>
 #include <iterator>
@@ -58,6 +59,15 @@
 #endif
 
 namespace emilib4 {
+
+// ─── NOINLINE macro for cold paths (rehash) ─────────────────────────
+#if defined(__GNUC__) || defined(__clang__)
+#define EMILIB4_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define EMILIB4_NOINLINE __declspec(noinline)
+#else
+#define EMILIB4_NOINLINE
+#endif
 
 // ─── EBO helper for stateless Hash/Pred ────────────────────────────
 
@@ -175,9 +185,10 @@ struct group15 {
 
     void set_sentinel() { m[N - 1] = sentinel_; }
 
+    // OPT-FIX4: Short-circuit on position (sentinel only at N-1) to avoid memory read 93% of the time
     bool is_sentinel(int pos) const {
         assert(pos < N);
-        return m[pos] == sentinel_;
+        return pos == N - 1 && m[pos] == sentinel_;
     }
 
     void reset(int pos) {
@@ -313,7 +324,7 @@ struct pow2_size_policy {
         int bits = 0;
 #if defined(_MSC_VER)
         unsigned long msb;
-        _BitScanReverse64(&msb, (unsigned __int64)(n - 1));
+        _BitScanReverse64(&msb, (uint64_t)(n - 1));
         bits = (int)msb + 1;
 #elif defined(__GNUC__) || defined(__clang__)
         bits = 64 - __builtin_clzll(n - 1);
@@ -329,9 +340,7 @@ struct pow2_size_policy {
 
     static constexpr size_t min_size() { return 2; }
 
-    static inline size_t position(size_t hash, size_t size_index) {
-        return size_index < sizeof(size_t) * 8 ? (hash >> size_index) : 0;
-    }
+    static inline size_t position(size_t hash, size_t size_index) { return hash >> size_index; }
 };
 
 // ─── quadratic prober ─────────────────────────────────────────────────
@@ -372,7 +381,15 @@ inline unsigned int unchecked_ctz(int x) {
 }
 
 // ─── prefetch ─────────────────────────────────────────────────────────
+// Respect EMH_NO_READ_PREFETCH from config.hpp (disabled by default on modern CPUs
+// where hardware speculation is sufficient; re-enable with -DEMH_ENABLE_PREFETCH)
 
+// Undef in case emihmap4.hpp was included before this header
+#ifdef EMH_PREFETCH_ELEMENTS
+#undef EMH_PREFETCH_ELEMENTS
+#endif
+
+#if !defined(EMH_NO_READ_PREFETCH)
 static inline void prefetch_element(const void* p) {
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
     _mm_prefetch(reinterpret_cast<const char*>(p), _MM_HINT_T0);
@@ -396,6 +413,9 @@ static inline void prefetch_element(const void* p) {
 #else
 #define EMH_PREFETCH_ELEMENTS(p, group_n) prefetch_element(p)
 #endif
+#else
+#define EMH_PREFETCH_ELEMENTS(p, group_n) ((void)(p))
+#endif
 
 // ─── HashMap ──────────────────────────────────────────────────────────
 
@@ -411,6 +431,14 @@ private:
     using htype = HashMap<KeyT, ValueT, HashT, EqT>;
     using PairT = std::pair<const KeyT, ValueT>;
     using group_type = group15;
+
+    // alloc_arrays uses malloc, which guarantees alignment of alignof(std::max_align_t)
+    // (typically 8 on 32-bit, 16 on 64-bit). If PairT requires stronger alignment,
+    // malloc would return a misaligned _pairs pointer (UB). _groups is manually
+    // aligned to 16 bytes via bitmask, so SIMD access is safe regardless.
+    static_assert(alignof(PairT) <= alignof(std::max_align_t),
+                  "PairT alignment exceeds std::max_align_t; use a type with smaller alignment or "
+                  "switch alloc_arrays to aligned_alloc / ::operator new(size, align_val_t)");
 
 public:
     using value_type = PairT;
@@ -659,7 +687,7 @@ public:
 
     // ─── lookup ───────────────────────────────────────────────────────
 
-    template <typename K> iterator find(const K& key) noexcept {
+    template <typename K> EMH_INLINE iterator find(const K& key) noexcept {
         auto hash = hash_for(key);
         auto pos0 = position_for(hash);
         // Inline find loop to avoid template function call overhead
@@ -686,7 +714,7 @@ public:
         } while (EMH_LIKELY(pb.next(_groups_size_mask)));
         return end();
     }
-    template <typename K> const_iterator find(const K& key) const noexcept {
+    template <typename K> EMH_INLINE const_iterator find(const K& key) const noexcept {
         auto hash = hash_for(key);
         auto pos0 = position_for(hash);
         auto* pairs = _pairs;
@@ -712,7 +740,7 @@ public:
         } while (EMH_LIKELY(pb.next(_groups_size_mask)));
         return cend();
     }
-    template <typename K = KeyT> bool contains(const K& key) const noexcept {
+    template <typename K = KeyT> EMH_INLINE bool contains(const K& key) const noexcept {
         auto hash = hash_for(key);
         auto pos0 = position_for(hash);
         auto* groups = _groups;
@@ -951,14 +979,28 @@ public:
         std::swap(_groups_size_mask, other._groups_size_mask);
     }
 
+    // OPT-FIX3: Single-pass clear — destroy elements and init groups in the same loop
+    // to keep metadata in cache (Boost pattern), instead of two separate passes.
     void clear() noexcept {
         if (_num_filled == 0)
             return;
         auto ng = _num_groups();
-        clear_data();
-        for (size_t i = 0; i < ng; i++)
-            _groups[i].initialize();
-        _groups[ng - 1].set_sentinel();
+        auto* groups = _groups;
+        auto* pairs = _pairs;
+        for (size_t gn = 0; gn < ng; gn++) {
+            auto mask = groups[gn].match_occupied();
+            if (gn == ng - 1)
+                mask &= ~(1 << (N - 1));
+            if (need_explicit_dtor()) {
+                while (mask) {
+                    auto n = unchecked_ctz(mask);
+                    pairs[gn * N + n].~PairT();
+                    mask &= mask - 1;
+                }
+            }
+            groups[gn].initialize();
+        }
+        groups[ng - 1].set_sentinel();
         _num_filled = 0;
         _max_load = initial_max_load();
     }
@@ -1068,7 +1110,7 @@ private:
         return find_locator_at(key, position_for(hash), hash);
     }
 
-    template <typename K> locator find_locator_at(const K& key, size_t pos0, size_t hash) const noexcept {
+    template <typename K> EMH_INLINE locator find_locator_at(const K& key, size_t pos0, size_t hash) const noexcept {
         auto* pairs = _pairs;
         auto* groups = _groups;
         quadratic_prober pb(pos0);
@@ -1231,17 +1273,16 @@ private:
         // Single allocation: [elements...][align padding][groups...]
         auto buf_size = buffer_size(num_groups);
         _pairs = static_cast<PairT*>(malloc(buf_size));
-        // Zero entire buffer to avoid MSan use-of-uninitialized-value.
-        // Cast to char* to avoid -Wclass-memaccess for non-trivially_copyable PairT.
-        memset(reinterpret_cast<char*>(_pairs), 0, buf_size);
 
         // Derive _groups from _pairs: advance past all element slots, align to sizeof(group15)=16
         auto p = reinterpret_cast<uintptr_t>(_pairs + num_groups * N - 1);
         _groups = reinterpret_cast<group15*>((p + sizeof(group15) - 1) & ~(sizeof(group15) - 1));
 
-        // Initialize groups (memset above already zeroed, but explicitly set for clarity)
-        for (size_t i = 0; i < num_groups; i++)
-            _groups[i].initialize();
+        // OPT-FIX1: Only zero the groups metadata, not the entire buffer.
+        // Boost only initializes groups; elements are accessed only after metadata check,
+        // so uninitialized element memory is safe (never read before set() marks it occupied).
+        // Cast to char* to avoid -Wclass-memaccess for non-trivially_copyable PairT.
+        memset(reinterpret_cast<char*>(_groups), 0, num_groups * sizeof(group15));
         _groups[num_groups - 1].set_sentinel();
 
         _max_load = initial_max_load();
@@ -1253,7 +1294,7 @@ private:
         return gs * N - 1;
     }
 
-    void rehash_impl(size_t n) {
+    EMILIB4_NOINLINE void rehash_impl(size_t n) {
         if (n < _num_filled)
             n = _num_filled;
         auto m = (size_t)(std::ceil((float)_num_filled / mlf));
@@ -1280,8 +1321,10 @@ private:
             _groups_size_index = si;
             alloc_arrays(pow2_size_policy::size(si), si);
         } else {
-            _groups_size_index = sizeof(size_t) * 8;
-            _groups_size_mask = 0;
+            // Use a valid size_index (not sizeof(size_t)*8) so position() doesn't need a guard branch.
+            // dummy_groups() provides a sentinel-terminated group for safe probing.
+            _groups_size_index = sizeof(size_t) * 8 - 1;
+            _groups_size_mask = 1;
             _max_load = 0;
             _groups = dummy_groups();
             _pairs = nullptr;
@@ -1315,7 +1358,8 @@ private:
 
     // Insert new element into new arrays first, then transfer old elements.
     // Avoids double hash computation for the new element.
-    template <typename... Args> locator unchecked_emplace_with_rehash(size_t hash, Args&&... args) {
+    // OPT-FIX2: Mark rehash cold paths as NOINLINE to prevent code bloat in insert hot path
+    template <typename... Args> EMILIB4_NOINLINE locator unchecked_emplace_with_rehash(size_t hash, Args&&... args) {
         auto cap = _capacity();
         auto new_cap = capacity_for((size_t)std::ceil((_num_filled + _num_filled / 61 + 1) / mlf));
         if (new_cap <= cap)
@@ -1389,7 +1433,7 @@ private:
     PairT* _pairs = nullptr;           // base allocation pointer
     size_t _num_filled = 0;
     size_t _max_load = 0;
-    size_t _groups_size_index = sizeof(size_t) * 8;
+    size_t _groups_size_index = sizeof(size_t) * 8 - 1;
     size_t _groups_size_mask = 0;
 };
 
