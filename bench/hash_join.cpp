@@ -14,9 +14,9 @@
 #include "emhash/hash_table6.hpp"
 #include "emhash/hash_table5.hpp"
 #include "emhash/hash_table8.hpp"
-#include "emilib/emilib2s.hpp"
-#include "emilib/emilib2o.hpp"
-#include "emilib/emilib2ss.hpp"
+#include "emilib/emihmap3.hpp"
+#include "emilib/emihmap2.hpp"
+#include "emilib/emihmap1.hpp"
 #include <iomanip>
 #include <chrono>
 
@@ -259,7 +259,7 @@ int main(int argc, const char* argv[])
 
     test_loops<martin_dense>("martin_dense"); test_block<martin_dense>("martin_dense");
 
-    test_loops<martin_flat> ("martin_flat"); 
+    test_loops<martin_flat> ("martin_flat");
 	//test_block<martin_flat> ("martin_flat");
 
     test_loops<tsl_robin_map> ("tsl_robin_map");

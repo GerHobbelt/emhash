@@ -53,7 +53,7 @@
     #define EMH_UNLIKELY(condition) __builtin_expect(!!(condition), 0)
 #elif defined(_MSC_VER) && (_MSC_VER >= 1920)
     #define EMH_LIKELY(condition)   ((condition) ? ((void)__assume(condition), 1) : 0)
-    #define EMH_UNLIKELY(condition) ((condition) ? 1 : ((void)__assume(!condition), 0))
+    #define EMH_UNLIKELY(condition) ((condition) ? 1 : ((void)__assume(!(condition)), 0))
 #else
     #define EMH_LIKELY(condition)   (condition)
     #define EMH_UNLIKELY(condition) (condition)
@@ -1373,11 +1373,11 @@ private:
     }
 #endif
 
-    //kick out bucket and find empty to occpuy
-    //it will break the orgin link and relnik again.
+    //kick out bucket and find empty to occupy
+    //it will break the original link and relink again.
     //before: main_bucket --> prev_bucket --> bucket --> next_bucket(maybe none exist)
-    //atfer : main_bucket --> prev_bucket   (kickout)    next_bucket <-- new_bucket(bucket)
-    //                          \|/                                        /|\
+    //after : main_bucket --> prev_bucket   (kickout)    next_bucket <-- new_bucket(bucket)
+    //                          \|/                                         ^
     //                          -|------------------------------------------|
     size_type kickout_bucket(const size_type kmain, const size_type bucket) noexcept
     {

@@ -58,7 +58,7 @@
     #define EMH_UNLIKELY(condition) __builtin_expect(!!(condition), 0)
 #elif defined(_MSC_VER) && (_MSC_VER >= 1920)
     #define EMH_LIKELY(condition)   ((condition) ? ((void)__assume(condition), 1) : 0)
-    #define EMH_UNLIKELY(condition) ((condition) ? 1 : ((void)__assume(!condition), 0))
+    #define EMH_UNLIKELY(condition) ((condition) ? 1 : ((void)__assume(!(condition)), 0))
 #else
     #define EMH_LIKELY(condition)   (condition)
     #define EMH_UNLIKELY(condition) (condition)
@@ -611,7 +611,7 @@ public:
     }
 #endif
 
-    //only useful for at fucntion if not find key then return zero
+    //only useful for at function if not find key then return zero
     void pack_zero(ValueT zero)
     {
         _pairs[_num_filled] = { KeyT(), zero };
@@ -924,14 +924,14 @@ public:
         return insert_unique(std::forward<Args>(args)...);
     }
 
-    std::pair<iterator, bool> insert_or_assign(const KeyT& key, ValueT&& val) 
-    { 
-        return do_assign(key, std::forward<ValueT>(val)); 
+    std::pair<iterator, bool> insert_or_assign(const KeyT& key, ValueT&& val)
+    {
+        return do_assign(key, std::forward<ValueT>(val));
     }
 
-    std::pair<iterator, bool> insert_or_assign(KeyT&& key, ValueT&& val) 
-    { 
-        return do_assign(std::move(key), std::forward<ValueT>(val)); 
+    std::pair<iterator, bool> insert_or_assign(KeyT&& key, ValueT&& val)
+    {
+        return do_assign(std::move(key), std::forward<ValueT>(val));
     }
 
     /// Return the old value or ValueT() if it didn't exist.
@@ -1565,11 +1565,11 @@ private:
     }
 #endif
 
-    //kick out bucket and find empty to occpuy
-    //it will break the orgin link and relnik again.
+    //kick out bucket and find empty to occupy
+    //it will break the original link and relink again.
     //before: main_bucket --> prev_bucket --> bucket --> next_bucket(maybe none exist)
-    //atfer : main_bucket --> prev_bucket   (kickout)    next_bucket <-- new_bucket(bucket)
-    //                          \|/                                        /|\
+    //after : main_bucket --> prev_bucket   (kickout)    next_bucket <-- new_bucket(bucket)
+    //                          \|/                                         ^
     //                          -|------------------------------------------|
     size_type kickout_bucket(const size_type kmain, const size_type bucket) noexcept
     {

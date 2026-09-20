@@ -54,15 +54,15 @@
 #define EMH_UNLIKELY(condition) __builtin_expect(!!(condition), 0)
 #elif defined(_MSC_VER) && (_MSC_VER >= 1920)
 #define EMH_LIKELY(condition)   ((condition) ? ((void)__assume(condition), 1) : 0)
-#define EMH_UNLIKELY(condition) ((condition) ? 1 : ((void)__assume(!condition), 0))
+#define EMH_UNLIKELY(condition) ((condition) ? 1 : ((void)__assume(!(condition)), 0))
 #else
 #define EMH_LIKELY(condition)   (condition)
 #define EMH_UNLIKELY(condition) (condition)
 #endif
 
-#if _WIN32
+#ifdef _WIN32
 #include <intrin.h>
-#if _WIN64
+#ifdef _WIN64
 #pragma intrinsic(_umul128)
 #endif
 #endif
@@ -85,21 +85,13 @@ static uint32_t CTZ(size_t n)
     n = __builtin_bswap64(n);
 #endif
 
-#if _WIN32
+#ifdef _WIN32
     unsigned long index;
     _BitScanForward64(&index, n);
 #elif defined (__LP64__) || (SIZE_MAX == UINT64_MAX) || defined (__x86_64__)
     int32_t index = __builtin_ctzll(n);
-#elif 1
-    int32_t index = __builtin_ctzl(n);
 #else
-    #if defined (__LP64__) || (SIZE_MAX == UINT64_MAX) || defined (__x86_64__)
-    int32_t index;
-    __asm__("bsfq %1, %0\n" : "=r" (index) : "rm" (n) : "cc");
-    #else
-    int32_t index;
-    __asm__("bsf %1, %0\n" : "=r" (index) : "rm" (n) : "cc");
-    #endif
+    int32_t index = __builtin_ctzl(n);
 #endif
 
     return (uint32_t)index;
@@ -1018,7 +1010,7 @@ private:
 		
         if (buckets > max_size() || buckets < _num_filled)
             std::abort(); //throw std::length_error("too large size");
-        
+
         const auto num_buckets = (size_type)buckets;
 
         _mask        = num_buckets - 1;
@@ -1175,10 +1167,10 @@ private:
         return _num_buckets;
     }
 
-    //kick out bucket and find empty to occpuy
-    //it will break the orgin link and relnik again.
+    //kick out bucket and find empty to occupy
+    //it will break the original link and relink again.
     //before: main_bucket-->prev_bucket --> bucket   --> next_bucket
-    //atfer : main_bucket-->prev_bucket --> (removed)--> new_bucket--> next_bucket
+    //after : main_bucket-->prev_bucket --> (removed)--> new_bucket--> next_bucket
     size_type kickout_bucket(const size_type main_bucket, const size_type bucket)
     {
         const auto next_bucket = _pairs[bucket].second;
