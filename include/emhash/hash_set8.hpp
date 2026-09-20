@@ -26,13 +26,13 @@
 #pragma once
 
 #ifdef __has_include
-#  if __has_include("config.hpp")
-#    include "config.hpp"
-#  elif __has_include("emhash/config.hpp")
-#    include "emhash/config.hpp"
-#  endif
+#if __has_include("config.hpp")
+#include "config.hpp"
+#elif __has_include("emhash/config.hpp")
+#include "emhash/config.hpp"
+#endif
 #else
-#  include "config.hpp"
+#include "config.hpp"
 #endif
 
 #include <cstring>
@@ -110,6 +110,11 @@ public:
         size_type next;
         size_type slot;
     };
+
+    using PairAlloc = typename std::allocator_traits<AllocT>::template rebind_alloc<value_type>;
+    using PairAllocTraits = std::allocator_traits<PairAlloc>;
+    using IndexAlloc = typename std::allocator_traits<AllocT>::template rebind_alloc<Index>;
+    using IndexAllocTraits = std::allocator_traits<IndexAlloc>;
 
     class const_iterator; // Forward declaration
 
@@ -331,7 +336,7 @@ public:
     }
 
     HashSet& operator=(HashSet&& rhs) noexcept(PairAllocTraits::propagate_on_container_move_assignment::value ||
-                                                std::is_nothrow_move_assignable<HashT>::value) {
+                                               std::is_nothrow_move_assignable<HashT>::value) {
         if (this != &rhs) {
             swap(rhs);
             rhs.clear();
@@ -377,7 +382,8 @@ public:
         _etail = rhs._etail;
 
         auto opairs = rhs._pairs;
-        memcpy(reinterpret_cast<char*>(_index), reinterpret_cast<char*>(rhs._index), (_num_buckets + EAD) * sizeof(Index));
+        memcpy(reinterpret_cast<char*>(_index), reinterpret_cast<char*>(rhs._index),
+               (_num_buckets + EAD) * sizeof(Index));
 
         if (is_trivially_copyable()) {
             memcpy(reinterpret_cast<char*>(_pairs), reinterpret_cast<char*>(opairs), _num_filled * sizeof(value_type));
@@ -411,13 +417,31 @@ public:
     iterator last() const { return {this, _num_filled - 1}; }
 
     // no exception if empty
-    value_type& front() { assert(_num_filled > 0); return _pairs[0]; }
-    const value_type& front() const { assert(_num_filled > 0); return _pairs[0]; }
-    value_type& back() { assert(_num_filled > 0); return _pairs[_num_filled - 1]; }
-    const value_type& back() const { assert(_num_filled > 0); return _pairs[_num_filled - 1]; }
+    value_type& front() {
+        assert(_num_filled > 0);
+        return _pairs[0];
+    }
+    const value_type& front() const {
+        assert(_num_filled > 0);
+        return _pairs[0];
+    }
+    value_type& back() {
+        assert(_num_filled > 0);
+        return _pairs[_num_filled - 1];
+    }
+    const value_type& back() const {
+        assert(_num_filled > 0);
+        return _pairs[_num_filled - 1];
+    }
 
-    void pop_front() { assert(_num_filled > 0); erase(begin()); }
-    void pop_back() { assert(_num_filled > 0); erase(last()); }
+    void pop_front() {
+        assert(_num_filled > 0);
+        erase(begin());
+    }
+    void pop_back() {
+        assert(_num_filled > 0);
+        erase(last());
+    }
 
     constexpr iterator begin() { return first(); }
     constexpr const_iterator cbegin() const { return first(); }
@@ -926,11 +950,14 @@ public:
 
     void rebuild(size_type num_buckets, size_type required_buckets, size_type old_num_buckets) noexcept {
         dealloc_index(_index, old_num_buckets);
-        const auto need_size = std::max(static_cast<size_type>(static_cast<double>(num_buckets) * static_cast<double>(max_load_factor())) + 4, required_buckets + 2);
+        const auto need_size = std::max(
+            static_cast<size_type>(static_cast<double>(num_buckets) * static_cast<double>(max_load_factor())) + 4,
+            required_buckets + 2);
         auto new_pairs = alloc_bucket(need_size);
         if (is_trivially_copyable()) {
             if (_pairs)
-                memcpy(reinterpret_cast<char*>(new_pairs), reinterpret_cast<char*>(_pairs), _num_filled * sizeof(value_type));
+                memcpy(reinterpret_cast<char*>(new_pairs), reinterpret_cast<char*>(_pairs),
+                       _num_filled * sizeof(value_type));
         } else {
             for (size_type slot = 0; slot < _num_filled; slot++) {
                 new (new_pairs + slot) value_type(std::move(_pairs[slot]));
@@ -1348,8 +1375,8 @@ private:
 
         It's the core algorithm of this hash map with highly optimization/benchmark.
         normally linear probing is inefficient with high load factor, it use a new 3-way linear
-        probing strategy to search empty slot. from benchmark even the load factor > 0.9, it's more 2-3 times faster than
-        one-way search strategy.
+        probing strategy to search empty slot. from benchmark even the load factor > 0.9, it's more 2-3 times faster
+    than one-way search strategy.
 
         1. linear or quadratic probing a few cache line for less cache miss from input slot "bucket_from".
         2. the first  search slot from member variant "_last", init with 0 with linear probe
@@ -1593,6 +1620,8 @@ private:
 
     template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, uint32_t>::type = 0>
     inline uint64_t hash_key(const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        EMH_MSAN_UNPOISON(key.data(), key.size());
 #if EMH_WYHASH_HASH
         return wyhashstr(key.data(), key.size());
 #else
@@ -1608,11 +1637,6 @@ private:
     }
 
 private:
-    using PairAlloc = typename std::allocator_traits<AllocT>::template rebind_alloc<value_type>;
-    using PairAllocTraits = std::allocator_traits<PairAlloc>;
-    using IndexAlloc = typename std::allocator_traits<AllocT>::template rebind_alloc<Index>;
-    using IndexAllocTraits = std::allocator_traits<IndexAlloc>;
-
     Index* _index;
     value_type* _pairs;
 

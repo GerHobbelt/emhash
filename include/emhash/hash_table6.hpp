@@ -587,8 +587,20 @@ public:
                     new (_pairs + bucket) PairT(opairs[bucket]);
             }
         }
-        memcpy(reinterpret_cast<char*>(_pairs + _num_buckets), opairs + _num_buckets,
-               PACK_SIZE * sizeof(PairT) + _num_buckets / 8 + BIT_PACK);
+
+        // Copy tail sentinels and bitmask
+        if (is_trivially_copyable()) {
+            memcpy(reinterpret_cast<char*>(_pairs + _num_buckets), opairs + _num_buckets,
+                   PACK_SIZE * sizeof(PairT) + _num_buckets / 8 + BIT_PACK);
+        } else {
+            // For non-trivially-copyable types, only init bucket field of tail sentinels
+            const size_type zero_bucket = 0;
+            for (size_type i = 0; i < PACK_SIZE; ++i)
+                std::memcpy(&_pairs[_num_buckets + i].bucket, &zero_bucket, sizeof(zero_bucket));
+            // Copy bitmask (trivially copyable bytes)
+            memcpy(reinterpret_cast<char*>(_bitmask), reinterpret_cast<char*>(rhs._bitmask),
+                   _num_buckets / 8 + BIT_PACK);
+        }
     }
 
     void swap(HashMap& rhs) noexcept {
@@ -867,8 +879,8 @@ public:
 
         for (auto rit = rhs.begin(); rit != rhs.end();) {
             auto fit = find(rit->first);
-            if (fit.bucket() > _mask) {
-                static_cast<void>(insert_unique(rit->first, std::move(rit->second)));
+            if (fit == end()) {
+                insert({rit->first, std::move(rit->second)});
                 rit = rhs.erase(rit);
             } else {
                 ++rit;
@@ -1126,10 +1138,9 @@ public:
             // Reset empty buckets to INACTIVE after clearkv
             for (size_type bucket = 0; bucket <= _mask; ++bucket) {
                 if (EMH_EMPTY(_pairs, bucket))
-                    _pairs[bucket].second = INACTIVE;
+                    EMH_ADDR(_pairs, bucket) = INACTIVE;
             }
-        }
-        else if (_num_filled) {
+        } else if (_num_filled) {
             memset(reinterpret_cast<char*>(_bitmask), static_cast<int>(0xFFFFFFFF), (_mask + 1) / 8);
             memset(reinterpret_cast<char*>(_pairs), -1, sizeof(_pairs[0]) * (_mask + 1));
 #if EMH_FIND_HIT
@@ -1167,15 +1178,9 @@ public:
         uint64_t buckets = _num_filled > (1u << 16) ? (1u << 16) : sizeof(size_t);
         while (buckets < required_buckets) {
             buckets *= 2;
+            if (buckets > max_size())
+                break;
         }
-
-        // no need alloc too many bucket for small key.
-        // if maybe fail set small load_factor and then call reserve() TODO:
-        // if (sizeof(KeyT) < sizeof(size_type) && buckets >= (1ul << (2 * 8)))
-        //    buckets = 2ul << (sizeof(KeyT) * 8);
-
-        if (buckets > max_size() || buckets < _num_filled)
-            throw std::length_error("emhash6::HashMap: too many elements");
         // assert(num_buckets == (2 << CTZ(required_buckets)));
 
         auto num_buckets = static_cast<size_type>(buckets);
@@ -1203,14 +1208,16 @@ public:
         _num_main = 0;
 #endif
 
-        // Initialize bucket field to INACTIVE for all entries.
-        // We must NOT memset the entire entry when it contains non-trivial types
-        // (e.g. std::string), as that is UB and may be optimized away by the compiler.
-        {
+        if (need_explicit_dtor()) {
+            // For non-trivial types (e.g. std::string), only init the bucket field.
+            // memset on the entire entry is UB and may be optimized away by the compiler.
             const auto inactive = INACTIVE;
             for (size_type i = 0; i < num_buckets; ++i) {
                 std::memcpy(&_pairs[i].bucket, &inactive, sizeof(inactive));
             }
+        } else {
+            memset(reinterpret_cast<char*>(_pairs), static_cast<int>(INACTIVE),
+                   sizeof(_pairs[0]) * static_cast<size_type>(num_buckets));
         }
 
 #if EMH_FIND_HIT
@@ -1218,8 +1225,14 @@ public:
             reset_bucket(hash_main(0));
 #endif
 
-        // pack tail two tombstones for fast iterator and find empty_bucket without checking overflow
-        memset(reinterpret_cast<char*>(_pairs + num_buckets), 0, sizeof(PairT) * PACK_SIZE);
+        // pack tail tombstones for fast iterator and find empty_bucket without checking overflow
+        if (need_explicit_dtor()) {
+            const size_type zero_bucket = 0;
+            for (size_type i = 0; i < PACK_SIZE; ++i)
+                std::memcpy(&_pairs[num_buckets + i].bucket, &zero_bucket, sizeof(zero_bucket));
+        } else {
+            memset(reinterpret_cast<char*>(_pairs + num_buckets), 0, sizeof(PairT) * PACK_SIZE);
+        }
 
         /***************** init bitmask ---------------------- ***********/
         const auto mask_byte = (num_buckets + 7) / 8;
@@ -1711,6 +1724,8 @@ private:
 
     template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, size_type>::type = 0>
     EMH_INLINE size_type hash_key(const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        EMH_MSAN_UNPOISON(key.data(), key.size());
 #if EMH_WY_HASH
         return static_cast<size_type>(wyhash(key.data(), key.size(), 0));
 #else
@@ -1733,7 +1748,7 @@ private:
     }
 
     PairT* alloc_bucket(uint64_t num_buckets) {
-        if (num_buckets > max_size())
+        if (num_buckets > max_size() || static_cast<int64_t>(num_buckets) <= 0)
             throw std::length_error("emhash6::HashMap: allocation size overflow");
         auto count = AllocPairCount(num_buckets);
         auto* p = PairAllocTraits::allocate(_alloc, count);

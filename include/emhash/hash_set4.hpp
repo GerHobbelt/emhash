@@ -395,7 +395,8 @@ public:
         _mask = other._mask;
         _loadlf = other._loadlf;
         _last = other._last;
-        _bitmask = decltype(_bitmask)(reinterpret_cast<uint8_t*>(_pairs) + (reinterpret_cast<uint8_t*>(other._bitmask) - reinterpret_cast<uint8_t*>(other._pairs)));
+        _bitmask = decltype(_bitmask)(reinterpret_cast<uint8_t*>(_pairs) + (reinterpret_cast<uint8_t*>(other._bitmask) -
+                                                                            reinterpret_cast<uint8_t*>(other._pairs)));
         auto opairs = other._pairs;
 
 #if __cplusplus >= 201402L || _MSC_VER > 1600 || __clang__
@@ -411,8 +412,16 @@ public:
                     new (_pairs + bucket) PairT(opairs[bucket]);
             }
         }
-        memcpy(static_cast<void*>(_pairs + _num_buckets), opairs + _num_buckets,
-               2 * sizeof(PairT) + _num_buckets / 8 + sizeof(size_t));
+        // For non-trivially-copyable types, only copy bucket field (.second) of tail
+        // sentinels and bitmask separately (memcpy of whole PairT reads uninitialized key).
+        if (std::is_trivially_copyable<KeyT>::value) {
+            memcpy(static_cast<void*>(_pairs + _num_buckets), opairs + _num_buckets,
+                   2 * sizeof(PairT) + _num_buckets / 8 + sizeof(size_t));
+        } else {
+            _pairs[_num_buckets].second = opairs[_num_buckets].second;
+            _pairs[_num_buckets + 1].second = opairs[_num_buckets + 1].second;
+            memcpy(_bitmask, other._bitmask, _num_buckets / 8 + sizeof(size_t));
+        }
     }
 
     inline void swap(HashSet& other) noexcept {
@@ -816,6 +825,47 @@ public:
         }
     }
 
+    template <typename Con> bool operator==(const Con& rhs) const {
+        if (size() != rhs.size())
+            return false;
+
+        for (auto it = begin(), last = end(); it != last; ++it) {
+            auto oi = rhs.find(*it);
+            if (oi == rhs.end())
+                return false;
+        }
+        return true;
+    }
+    template <typename Con> bool operator!=(const Con& rhs) const { return !(*this == rhs); }
+
+    void merge(HashSet& rhs) {
+        if (empty()) {
+            *this = std::move(rhs);
+            return;
+        }
+
+        for (auto rit = rhs.begin(); rit != rhs.end();) {
+            auto fit = find(*rit);
+            if (fit == end()) {
+                insert_unique(*rit);
+                rit = rhs.erase(rit);
+            } else {
+                ++rit;
+            }
+        }
+    }
+
+    template <typename Pred> size_type erase_if(Pred pred) {
+        auto old_size = size();
+        for (auto it = begin(); it != end();) {
+            if (pred(*it))
+                it = erase(it);
+            else
+                ++it;
+        }
+        return old_size - size();
+    }
+
     /// Remove all elements, keeping full capacity.
     void clear() {
         if (need_explicit_dtor())
@@ -872,12 +922,16 @@ private:
         _num_buckets = num_buckets;
         _last = 0;
 
-        if (bInCacheLine)
+        if (bInCacheLine && std::is_trivially_copyable<KeyT>::value)
             memset(static_cast<void*>(new_pairs), static_cast<int>(INACTIVE), sizeof(_pairs[0]) * num_buckets);
         else
             for (size_type bucket = 0; bucket < num_buckets; bucket++)
                 new_pairs[bucket].second = INACTIVE;
-        memset(static_cast<void*>(new_pairs + num_buckets), 0, sizeof(PairT) * 2);
+        // Only init bucket field (.second) of tail sentinels for non-trivially-copyable types
+        if (std::is_trivially_copyable<KeyT>::value)
+            memset(static_cast<void*>(new_pairs + num_buckets), 0, sizeof(PairT) * 2);
+        else
+            new_pairs[num_buckets].second = new_pairs[num_buckets + 1].second = 0;
 
         // set bit mask
         _bitmask = decltype(_bitmask)(new_pairs + 2 + num_buckets);
@@ -1224,6 +1278,8 @@ private:
 
     template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, size_type>::type = 0>
     inline size_type hash_bucket(const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        EMH_MSAN_UNPOISON(key.data(), key.size());
 #ifdef WYHASH_LITTLE_ENDIAN
         return static_cast<size_type>(wyhash(key.data(), key.size(), key.size()));
 #else

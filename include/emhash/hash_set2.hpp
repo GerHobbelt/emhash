@@ -97,6 +97,9 @@ public:
     using pointer = KeyT*;
     using const_reference = const KeyT&;
 
+    using PairAlloc = typename std::allocator_traits<AllocT>::template rebind_alloc<PairT>;
+    using PairAllocTraits = std::allocator_traits<PairAlloc>;
+
     class iterator {
     public:
         using iterator_category = std::forward_iterator_tag;
@@ -287,7 +290,7 @@ public:
         _loadlf = other._loadlf;
 
         if (std::is_trivially_copyable<KeyT>::value) {
-            memcpy(static_cast<void*>(_pairs), other._pairs, _num_buckets * sizeof(PairT));
+            memcpy(static_cast<void*>(_pairs), other._pairs, (_num_buckets + 2) * sizeof(PairT));
         } else {
             auto old_pairs = other._pairs;
             for (size_type bucket = 0; bucket < _num_buckets; bucket++) {
@@ -739,6 +742,47 @@ public:
         }
     }
 
+    template <typename Con> bool operator==(const Con& rhs) const {
+        if (size() != rhs.size())
+            return false;
+
+        for (auto it = begin(), last = end(); it != last; ++it) {
+            auto oi = rhs.find(*it);
+            if (oi == rhs.end())
+                return false;
+        }
+        return true;
+    }
+    template <typename Con> bool operator!=(const Con& rhs) const { return !(*this == rhs); }
+
+    void merge(HashSet& rhs) {
+        if (empty()) {
+            *this = std::move(rhs);
+            return;
+        }
+
+        for (auto rit = rhs.begin(); rit != rhs.end();) {
+            auto fit = find(*rit);
+            if (fit == end()) {
+                insert_unique(*rit);
+                rit = rhs.erase(rit);
+            } else {
+                ++rit;
+            }
+        }
+    }
+
+    template <typename Pred> size_type erase_if(Pred pred) {
+        auto old_size = size();
+        for (auto it = begin(); it != end();) {
+            if (pred(*it))
+                it = erase(it);
+            else
+                ++it;
+        }
+        return old_size - size();
+    }
+
     /// Remove all elements, keeping full capacity.
     void clear() {
         if (_num_filled > _num_buckets / 4 && std::is_trivially_destructible<KeyT>::value)
@@ -812,13 +856,19 @@ private:
         _pairs = new_pairs;
         _last_colls = num_buckets - 1;
 
-        if (bInCacheLine) {
-            memset(static_cast<void*>(_pairs), static_cast<int>(static_cast<uint32_t>(-1u)), sizeof(_pairs[0]) * num_buckets);
+        if (bInCacheLine && std::is_trivially_copyable<KeyT>::value) {
+            memset(static_cast<void*>(_pairs), static_cast<int>(static_cast<uint32_t>(-1u)),
+                   sizeof(_pairs[0]) * num_buckets);
         } else {
             for (size_type bucket = 0; bucket < num_buckets; bucket++)
                 _pairs[bucket].second = INACTIVE;
         }
-        memset(static_cast<void*>(_pairs + num_buckets), 0, sizeof(_pairs[0]) * 2);
+        // Only init bucket field (.second) of tail sentinels for non-trivially-copyable types
+        // (memset of whole PairT would be UB for non-trivial KeyT like std::string).
+        if (std::is_trivially_copyable<KeyT>::value)
+            memset(static_cast<void*>(_pairs + num_buckets), 0, sizeof(_pairs[0]) * 2);
+        else
+            _pairs[num_buckets].second = _pairs[num_buckets + 1].second = 0;
 
         // set all main bucket first
         for (size_type src_bucket = 0; _num_filled < old_num_filled; src_bucket++) {
@@ -1043,8 +1093,8 @@ private:
         if (_pairs[bucket].second == INACTIVE)
             return bucket;
 
-        constexpr auto linear_probe_length =
-            std::max(static_cast<unsigned int>(128 / sizeof(PairT)) + 2, 4u); // cpu cache line 64 byte,2-3 cache line miss
+        constexpr auto linear_probe_length = std::max(static_cast<unsigned int>(128 / sizeof(PairT)) + 2,
+                                                      4u); // cpu cache line 64 byte,2-3 cache line miss
         auto offset = 1u;
 
         for (; offset < linear_probe_length; offset++) {
@@ -1146,6 +1196,8 @@ private:
 
     template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, size_type>::type = 0>
     inline size_type hash_bucket(const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        EMH_MSAN_UNPOISON(key.data(), key.size());
 #ifdef WYHASH_LITTLE_ENDIAN
         return static_cast<size_type>(wyhash(key.data(), key.size(), key.size()) & _mask);
 #else
@@ -1165,9 +1217,6 @@ private:
     }
 
 private:
-    using PairAlloc = typename std::allocator_traits<AllocT>::template rebind_alloc<PairT>;
-    using PairAllocTraits = std::allocator_traits<PairAlloc>;
-
     // the first cache line packed
     PairT* _pairs;
     HashT _hasher;

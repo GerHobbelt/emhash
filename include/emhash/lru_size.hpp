@@ -72,9 +72,9 @@ template <typename First, typename Second> struct entry {
 #if EMHASH_SET_TIME
         return EMHASH_SET_TIME;
 #elif EMHASH_LRU_TIME
-        return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                   std::chrono::steady_clock::now().time_since_epoch())
-            .count());
+        return static_cast<uint32_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+                .count());
 #else
         static uint32_t _sid = 0;
         return ++_sid; // overflow
@@ -832,7 +832,8 @@ public:
         char buff[256] = {0};
         snprintf(buff, sizeof(buff),
                  "    _num_filled medium_id.pack_size.erase_ids load_factor|%u %u %zu %u %.3f|, time_use = %3d ms",
-                 _num_filled, medium_id, sizeof(_pairs[0]), old_nums - _num_filled, load_factor(), static_cast<int>(clock() - ts));
+                 _num_filled, medium_id, sizeof(_pairs[0]), old_nums - _num_filled, load_factor(),
+                 static_cast<int>(clock() - ts));
 #if EMHASH_USE_LOG
         static uint32_t iremoves = 0;
         FDLOG("lru_size") << __FUNCTION__ << " removes = " << iremoves++ << "|" << buff << std::endl;
@@ -1206,11 +1207,13 @@ private:
 
     template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, uint32_t>::type = 0>
     inline uint32_t hash_bucket(const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        EMH_MSAN_UNPOISON(key.data(), key.size());
 #ifdef WYHASH_LITTLE_ENDIAN
         return static_cast<uint32_t>(wyhash(key.c_str(), key.size(), key.size()) & _mask);
 #elif EMHASH_BKR_HASH
         uint32_t hash = 0;
-        for (int i = 0, j = 1; i < key.size(); i += j++)
+        for (int i = 0, j = 1; i < key.size(); i += j)
             hash = key[i] + hash * 131;
         return hash & _mask;
 #else

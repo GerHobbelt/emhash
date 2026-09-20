@@ -39,13 +39,13 @@
 #pragma once
 
 #ifdef __has_include
-#  if __has_include("config.hpp")
-#    include "config.hpp"
-#  elif __has_include("emhash/config.hpp")
-#    include "emhash/config.hpp"
-#  endif
+#if __has_include("config.hpp")
+#include "config.hpp"
+#elif __has_include("emhash/config.hpp")
+#include "emhash/config.hpp"
+#endif
 #else
-#  include "config.hpp"
+#include "config.hpp"
 #endif
 
 #include <cstring>
@@ -233,7 +233,8 @@ public:
 
     allocator_type get_allocator() const { return allocator_type(_alloc); }
 
-    explicit HashSet(size_type bucket = 4, const HashT& hash = HashT(), const EqT& eq = EqT(), const AllocT& alloc = AllocT())
+    explicit HashSet(size_type bucket = 4, const HashT& hash = HashT(), const EqT& eq = EqT(),
+                     const AllocT& alloc = AllocT())
         : _alloc(alloc) {
         init();
         _hasher = hash;
@@ -814,7 +815,8 @@ public:
         _num_colls = 0;
 
         if (sizeof(PairT) <= EMH_CACHE_LINE_SIZE / 2)
-            memset(static_cast<void*>(_pairs), static_cast<int>(static_cast<uint32_t>(-1u)), _total_buckets * sizeof(_pairs[0]));
+            memset(static_cast<void*>(_pairs), static_cast<int>(static_cast<uint32_t>(-1u)),
+                   _total_buckets * sizeof(_pairs[0]));
         else {
             for (size_type bucket = 0; bucket < _total_buckets; bucket++)
                 EMH_BUCKET(_pairs, bucket) = INACTIVE;
@@ -895,7 +897,8 @@ public:
 #if EMH_REHASH_LOG
         auto diff = old_num_colls + old_num_mains - _num_colls - _num_mains;
         if (diff != 0) {
-            printf("%d %d | %d %d diff = %ld\n", old_num_colls, old_num_mains, _num_colls, _num_mains, static_cast<long>(diff));
+            printf("%d %d | %d %d diff = %ld\n", old_num_colls, old_num_mains, _num_colls, _num_mains,
+                   static_cast<long>(diff));
             assert(diff == 0);
         }
 #endif
@@ -929,7 +932,8 @@ private:
         while (true) {
             const auto nbucket = EMH_BUCKET(_pairs, next_bucket);
             if (_eq(key, EMH_KEY(_pairs, next_bucket))) {
-                EMH_BUCKET(_pairs, prev_bucket) = static_cast<size_type>((nbucket == next_bucket) ? prev_bucket : nbucket);
+                EMH_BUCKET(_pairs, prev_bucket) =
+                    static_cast<size_type>((nbucket == next_bucket) ? prev_bucket : nbucket);
                 return next_bucket;
             }
 
@@ -1137,7 +1141,7 @@ private:
         uint64_t high;
         constexpr uint64_t k = UINT64_C(11400714819323198485);
         return _umul128(key, k, &high) + high;
-#elif 0 // alternate: mul-hash
+#elif 1 // alternate: mul-hash
         uint64_t const r = key * UINT64_C(0xca4bcaa75ec3f625);
         return (r >> 32) + r;
 #elif 0 // alternate: MurmurHash3Mixer
@@ -1155,6 +1159,8 @@ private:
         x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
         x = x ^ (x >> 31);
         return x;
+#else
+        return n;
 #endif
     }
 

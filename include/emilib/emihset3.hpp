@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "emhash/config.hpp"
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -35,7 +36,8 @@
 
 #ifdef _WIN32
 #include <intrin.h>
-#elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) || defined(_M_X64)
+#elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) ||       \
+    defined(_M_X64)
 #include <x86intrin.h>
 #elif defined(__ARM_ARCH) || defined(__aarch64__) || defined(__arm__)
 #include "sse2neon.h"
@@ -153,6 +155,10 @@ public:
 
     template <typename UType, typename std::enable_if<!std::is_integral<UType>::value, int8_t>::type = 0>
     inline int8_t hash_key2(size_t& main_bucket, const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        if constexpr (std::is_same<UType, std::string>::value) {
+            EMH_MSAN_UNPOISON(key.data(), key.size());
+        }
         const auto key_hash = _hasher(key);
         main_bucket = static_cast<size_t>(key_hash & _mask);
         main_bucket -= main_bucket % simd_bytes;
@@ -241,7 +247,8 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask = 0;        size_t _bucket;
+        size_t _bmask = 0;
+        size_t _bucket;
         size_t _from;
     };
 
@@ -308,7 +315,8 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask = 0;        size_t _bucket;
+        size_t _bmask = 0;
+        size_t _bucket;
         size_t _from;
     };
 
@@ -375,7 +383,7 @@ public:
         }
 
         if (is_trivially_copyable()) {
-            memcpy((char*)_pairs, other._pairs, _num_buckets * sizeof(_pairs[0]));
+            memcpy((char*)_pairs, (const char*)other._pairs, (_num_buckets + 1) * sizeof(_pairs[0]));
         } else {
             for (auto it = other.cbegin(); it.bucket() != _num_buckets; ++it)
                 new (_pairs + it.bucket()) PairT(*it);
@@ -471,9 +479,9 @@ public:
         }
 
         for (auto rit = rhs.begin(); rit != rhs.end();) {
-            auto fit = find(rit);
+            auto fit = find(*rit);
             if (fit.bucket() > _mask) {
-                insert_unique(rit);
+                insert_unique(*rit);
                 rhs.erase(rit++);
             } else {
                 ++rit;
@@ -612,8 +620,9 @@ public:
         auto old_size = size();
         for (auto it = begin(), last = end(); it != last;) {
             if (pred(*it))
-                erase(it);
-            ++it;
+                erase(it++);
+            else
+                ++it;
         }
         return old_size - size();
     }
@@ -681,10 +690,12 @@ public:
         uint64_t buckets = _num_filled > (1u << 16) ? (1u << 16) : simd_bytes;
         while (buckets < required_buckets) {
             buckets *= 2;
+            if (buckets > max_size())
+                break;
         }
 
         if (buckets > max_size() || buckets < _num_filled)
-            throw std::length_error("emilib3::HashSet: too many elements");
+            return;
 
         const auto num_buckets = static_cast<size_t>(buckets);
         const auto pairs_size = (num_buckets + 1) * sizeof(PairT);
@@ -707,8 +718,12 @@ public:
         _states = new_state;
         _pairs = new_pairs;
 
-        // fill last packet zero
-        memset((char*)(_pairs + num_buckets), 0, sizeof(_pairs[0]));
+        // fill last packet zero (tail sentinel for SIMD scan termination)
+        // Only the _states ESENTINEL marker is needed; key of the sentinel
+        // is never accessed, so no placement-new is required for non-trivial types.
+        if (is_trivially_copyable()) {
+            memset((char*)(_pairs + num_buckets), 0, sizeof(_pairs[0]));
+        }
         clear_meta();
 
 #if EMH_STATIS

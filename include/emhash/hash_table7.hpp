@@ -527,7 +527,7 @@ public:
     }
 
     PairT* alloc_bucket(size_type num_buckets) {
-        if (num_buckets > max_size())
+        if (num_buckets <= 0 || num_buckets > max_size())
             throw std::length_error("emhash7::HashMap: allocation size overflow");
         auto count = alloc_count(num_buckets);
         auto* new_pairs = PairAllocTraits::allocate(_alloc, count);
@@ -654,13 +654,19 @@ public:
         if (is_trivially_copyable())
             memcpy(reinterpret_cast<char*>(_pairs), opairs, AllocSize(_num_buckets));
         else {
-            memcpy(reinterpret_cast<char*>(_pairs + _num_buckets), opairs + _num_buckets,
-                   EPACK_SIZE * sizeof(PairT) + (_num_buckets + 7) / 8 + BIT_PACK);
+            // For non-trivially-copyable types, only init bucket field of tail sentinels
+            // (memcpy of whole PairT would read uninitialized key — MSan UB).
+            // Then placement-new each filled bucket. Finally copy bitmask bytes.
+            const size_type zero_bucket = 0;
+            for (size_type i = 0; i < EPACK_SIZE; ++i)
+                std::memcpy(&EMH_BUCKET(_pairs, _num_buckets + i), &zero_bucket, sizeof(zero_bucket));
             for (auto it = rhs.cbegin(); it.bucket() < _num_buckets; ++it) {
                 const auto bucket = it.bucket();
                 new (_pairs + bucket) PairT(opairs[bucket]);
                 EMH_BUCKET(_pairs, bucket) = EMH_BUCKET(opairs, bucket);
             }
+            memcpy(reinterpret_cast<char*>(_bitmask), reinterpret_cast<char*>(rhs._bitmask),
+                   (_num_buckets + 7) / 8 + BIT_PACK);
         }
     }
 
@@ -983,8 +989,8 @@ public:
 
         for (auto rit = rhs.begin(); rit != rhs.end();) {
             auto fit = find(rit->first);
-            if (fit.bucket() == _num_buckets) {
-                static_cast<void>(insert_unique(rit->first, std::move(rit->second)));
+            if (fit == end()) {
+                insert({rit->first, std::move(rit->second)});
                 rit = rhs.erase(rit);
             } else {
                 ++rit;
@@ -1276,7 +1282,7 @@ public:
         while (buckets < required_buckets) {
             buckets *= 2;
             if (buckets > static_cast<uint64_t>(max_size()))
-                throw std::length_error("emhash7::HashMap: too many elements");
+                break;
         }
 
         auto num_buckets = static_cast<size_type>(buckets);
@@ -1291,7 +1297,14 @@ public:
         _mask = num_buckets - 1;
 
         _pairs = alloc_bucket(_num_buckets);
-        memset(reinterpret_cast<char*>(_pairs + _num_buckets), 0, sizeof(PairT) * EPACK_SIZE);
+        if (is_trivially_copyable()) {
+            memset(reinterpret_cast<char*>(_pairs + _num_buckets), 0, sizeof(PairT) * EPACK_SIZE);
+        } else {
+            // For non-trivially-copyable types, only zero the bucket field of tail sentinels.
+            const size_type zero_bucket = 0;
+            for (size_type i = 0; i < EPACK_SIZE; ++i)
+                std::memcpy(&EMH_BUCKET(_pairs, _num_buckets + i), &zero_bucket, sizeof(zero_bucket));
+        }
 
         _bitmask = decltype(_bitmask)(_pairs + EPACK_SIZE + num_buckets);
 
@@ -1705,6 +1718,8 @@ private:
 
     template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, size_type>::type = 0>
     EMH_INLINE size_type hash_key(const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        EMH_MSAN_UNPOISON(key.data(), key.size());
 #if EMH_WY_HASH
         return static_cast<size_type>(emh_wyhash(key.data(), key.size(), 0));
 #else

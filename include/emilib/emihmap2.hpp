@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "emhash/config.hpp"
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
@@ -36,7 +37,8 @@
 
 #ifdef _WIN32
 #include <intrin.h>
-#elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) || defined(_M_X64)
+#elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) ||       \
+    defined(_M_X64)
 #include <x86intrin.h>
 #elif defined(__ARM_ARCH) || defined(__aarch64__) || defined(__arm__)
 #include <sse2neon.h>
@@ -161,6 +163,10 @@ public:
 
     template <typename UType, typename std::enable_if<!std::is_integral<UType>::value, int8_t>::type = 0>
     inline int8_t hash_key2(size_t& main_bucket, const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        if constexpr (std::is_same<UType, std::string>::value) {
+            EMH_MSAN_UNPOISON(key.data(), key.size());
+        }
         const auto key_hash = _hasher(key);
         main_bucket = static_cast<size_t>(key_hash) & _mask;
         return (int8_t)(size_t)(key_hash % MAP_BITS) + EFILLED;
@@ -376,8 +382,6 @@ public:
     ~HashMap() noexcept {
         clear_data();
         _num_filled = 0;
-        if (need_explicit_dtor())
-            _pairs[_num_buckets].~PairT();
         free(_pairs);
     }
 
@@ -390,22 +394,14 @@ public:
         clear_data();
 
         if (other._num_buckets != _num_buckets) {
-            if (need_explicit_dtor() && _num_buckets > 0)
-                _pairs[_num_buckets].~PairT();
             _num_filled = _num_buckets = 0;
             rehash(other._num_buckets);
-            // rehash() constructed a default sentinel at _pairs[_num_buckets];
-            // destruct it so the copy section below can re-construct from other.
-            if (need_explicit_dtor())
-                _pairs[_num_buckets].~PairT();
-        } else if (need_explicit_dtor()) {
-            _pairs[_num_buckets].~PairT();
         }
 
         if (is_trivially_copyable()) {
-            memcpy((char*)_pairs, other._pairs, (_num_buckets + 1) * sizeof(PairT));
+            memcpy((char*)_pairs, (const char*)other._pairs, (_num_buckets + 1) * sizeof(PairT));
         } else {
-            for (auto it = other.cbegin(); it.bucket() <= _num_buckets; ++it)
+            for (auto it = other.cbegin(); it.bucket() < _num_buckets; ++it)
                 new (_pairs + it.bucket()) PairT(*it);
         }
 
@@ -754,8 +750,9 @@ public:
         auto old_size = size();
         for (auto it = begin(), last = end(); it != last;) {
             if (pred(*it))
-                erase(it);
-            ++it;
+                erase(it++);
+            else
+                ++it;
         }
         return old_size - size();
     }
@@ -844,17 +841,19 @@ public:
         uint64_t buckets = _num_filled > (1u << 16) ? (1u << 16) : simd_bytes;
         while (buckets < required_buckets) {
             buckets *= 2;
+            if (buckets > max_size())
+                break;
         }
+
+        if (buckets > max_size() || buckets < _num_filled)
+            return;
 
         const auto pairs_size = (buckets + 1) * sizeof(PairT);
         const auto state_size = buckets + simd_bytes;
-        // assert(state_size % 8 == 0);
-        if (buckets > max_size() || buckets < _num_filled)
-            throw std::length_error("emilib2::HashMap: too many elements");
 
         const auto num_buckets = static_cast<size_t>(buckets);
-        auto* new_data = static_cast<char*>(malloc(pairs_size + state_size * sizeof(_states[0]) +
-                                             (state_size / OFFSET_STEP) * sizeof(_offset[0])));
+        auto* new_data = static_cast<char*>(
+            malloc(pairs_size + state_size * sizeof(_states[0]) + (state_size / OFFSET_STEP) * sizeof(_offset[0])));
         auto old_states = _states;
 
         auto* new_pairs = reinterpret_cast<decltype(_pairs)>(new_data);
@@ -878,12 +877,10 @@ public:
         std::fill_n(_offset, num_buckets / OFFSET_STEP + 1, EMPTY_OFFSET);
 
         {
-            // TODO: set last packet tombstone. not equal key h2
-            new (_pairs + num_buckets) PairT(KeyT(), ValueT());
-            // size_t main_bucket;
-            //_states[num_buckets] = hash_key2(main_bucket, _pairs[num_buckets].first) + 2; //iterator end tombstone:
-            if (old_buckets && need_explicit_dtor())
-                old_pairs[old_buckets].~PairT();
+            // Sentinel key/value are never accessed (only _states ESENTINEL
+            // controls iteration), so no placement-new needed for non-trivial types.
+            if (is_trivially_copyable())
+                memset((char*)(_pairs + num_buckets), 0, sizeof(PairT));
         }
 
         for (size_t src_bucket = old_buckets - 1; _num_filled < old_num_filled; --src_bucket) {

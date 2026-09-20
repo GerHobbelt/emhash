@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "emhash/config.hpp"
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
@@ -36,7 +37,8 @@
 
 #ifdef _WIN32
 #include <intrin.h>
-#elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) || defined(_M_X64)
+#elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) ||       \
+    defined(_M_X64)
 #include <x86intrin.h>
 #elif defined(__ARM_ARCH) || defined(__aarch64__) || defined(__arm__)
 #include "sse2neon.h"
@@ -131,6 +133,10 @@ public:
 
     template <typename UType, typename std::enable_if<!std::is_integral<UType>::value, int8_t>::type = 0>
     inline int8_t hash_key2(size_t& main_bucket, const UType& key) const {
+        EMH_MSAN_UNPOISON(&key, sizeof(key));
+        if constexpr (std::is_same<UType, std::string>::value) {
+            EMH_MSAN_UNPOISON(key.data(), key.size());
+        }
         const auto key_hash = _hasher(key);
         main_bucket = static_cast<size_t>(key_hash & _mask);
         main_bucket -= main_bucket % simd_bytes;
@@ -357,7 +363,7 @@ public:
 
         if (is_trivially_copyable()) {
             const auto pairs_size = (1 + bucket_to_slot(_num_buckets)) * sizeof(PairT);
-            memcpy((char*)_pairs, other._pairs, pairs_size);
+            memcpy((char*)_pairs, (const char*)other._pairs, pairs_size);
         } else {
             for (auto it = other.cbegin(); it.bucket() != _num_buckets; ++it)
                 new (_pairs + bucket_to_slot(it.bucket())) PairT(*it);
@@ -405,10 +411,8 @@ public:
         return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(bucket_to_slot(_num_buckets)) : 0.0f;
     }
 
-    float max_load_factor(float lf = 7.0f / 8) noexcept {
-        (void)lf;
-        return static_cast<float>(MXLOAD_FACTOR) / (MXLOAD_FACTOR + 1);
-    }
+    float max_load_factor() const noexcept { return static_cast<float>(MXLOAD_FACTOR) / (MXLOAD_FACTOR + 1); }
+    void max_load_factor(float) noexcept {}
 
     constexpr uint64_t max_size() const { return 1ull << (sizeof(_num_buckets) * 8 - 1); }
     constexpr uint64_t max_bucket_count() const { return max_size(); }
@@ -689,8 +693,9 @@ public:
         auto old_size = size();
         for (auto it = begin(), last = end(); it != last;) {
             if (pred(*it))
-                erase(it);
-            ++it;
+                erase(it++);
+            else
+                ++it;
         }
         return old_size - size();
     }
@@ -783,7 +788,12 @@ public:
         auto num_buckets = _num_filled > (1u << 16) ? (1u << 16) : simd_bytes;
         while (num_buckets < required_buckets) {
             num_buckets *= 2;
+            if (num_buckets > max_size())
+                break;
         }
+
+        if (num_buckets > max_size() || num_buckets < _num_filled)
+            return;
 
         const auto pairs_size = (1 + bucket_to_slot(num_buckets)) * sizeof(PairT);
         const auto state_size = (simd_bytes + num_buckets) * sizeof(State);
@@ -802,8 +812,11 @@ public:
         _states = new_state;
         _pairs = new_pairs;
 
-        // fill last packet zero
-        memset((char*)(_pairs + pairs_size / sizeof(PairT) - 1), 0, sizeof(_pairs[0]));
+        // fill last packet zero (tail sentinel for SIMD scan termination)
+        // Only the _states ESENTINEL marker is needed; key/value of the sentinel
+        // are never accessed, so no placement-new is required for non-trivial types.
+        if (is_trivially_copyable())
+            memset((char*)(_pairs + pairs_size / sizeof(PairT) - 1), 0, sizeof(_pairs[0]));
 
         clear_meta();
 
@@ -823,6 +836,7 @@ public:
                     src_pair.~PairT();
             }
         }
+
         free(old_states);
         free(old_pairs);
     }
