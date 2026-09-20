@@ -86,7 +86,7 @@ jobs:
         shell: bash
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-${{ matrix.os }}-${{ matrix.compiler }}-${{ hashFiles('include/**/*.hpp', 'tests/**/*.cpp', 'tests/common/**/*.hpp') }}
@@ -255,7 +255,7 @@ jobs:
         shell: bash
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-asan-${{ matrix.os }}-${{ matrix.compiler }}-${{ hashFiles('include/**/*.hpp', 'tests/**/*.cpp', 'tests/common/**/*.hpp') }}
@@ -623,7 +623,7 @@ jobs:
         shell: bash
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-msan-${{ hashFiles('include/**/*.hpp', 'tests/**/*.cpp', 'tests/common/**/*.hpp') }}
@@ -694,7 +694,7 @@ jobs:
         shell: bash
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-coverage-${{ hashFiles('include/**/*.hpp', 'tests/**/*.cpp', 'tests/common/**/*.hpp') }}
@@ -896,7 +896,7 @@ jobs:
 
       - name: Download baseline from last successful main run
         id: download-baseline
-        uses: dawidd6/action-download-artifact@v21
+        uses: dawidd6/action-download-artifact@v24
         continue-on-error: true
         with:
           name: benchmark-baseline
