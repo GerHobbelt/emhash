@@ -387,7 +387,7 @@ public:
         }
 
         if (is_trivially_copyable()) {
-            memcpy((char*)_pairs, (const char*)other._pairs, (_num_buckets + 1) * sizeof(_pairs[0]));
+            memcpy(reinterpret_cast<char*>(_pairs), reinterpret_cast<const char*>(other._pairs), (_num_buckets + 1) * sizeof(_pairs[0]));
         } else {
             for (auto it = other.cbegin(); it.bucket() != _num_buckets; ++it)
                 new (_pairs + it.bucket()) PairT(*it);
@@ -434,7 +434,7 @@ public:
     size_t bucket_count() const noexcept { return _num_buckets; }
 
     /// Returns average number of elements per bucket.
-    float load_factor() const noexcept { return _num_buckets ? float(_num_filled) / float(_num_buckets) : 0.0f; }
+    float load_factor() const noexcept { return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(_num_buckets) : 0.0f; }
 
     inline constexpr float max_load_factor() const { return EMH_MAX_LOAD_FACTOR; }
     inline constexpr float min_load_factor() const { return EMH_MIN_LOAD_FACTOR; }
@@ -723,7 +723,7 @@ public:
         // Only the _states ESENTINEL marker is needed; key of the sentinel
         // is never accessed, so no placement-new is required for non-trivial types.
         if (is_trivially_copyable()) {
-            memset((char*)(_pairs + num_buckets), 0, sizeof(_pairs[0]));
+            memset(reinterpret_cast<char*>(_pairs + num_buckets), 0, sizeof(_pairs[0]));
         }
         clear_meta();
 
@@ -731,7 +731,6 @@ public:
         auto collision = 0;
 #endif
 
-        // for (size_t src_bucket = 0; _num_filled < old_num_filled; src_bucket++) {
         for (size_t src_bucket = old_buckets - 1; _num_filled < old_num_filled; --src_bucket) {
             if (old_states[src_bucket] >= State::EFILLED) {
                 auto& src_pair = old_pairs[src_bucket];
@@ -765,7 +764,7 @@ private:
     static void prefetch_read(char* ctrl) {
 #ifndef EMH_NO_READ_PREFETCH
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
-        _mm_prefetch((const char*)ctrl, _MM_HINT_T0);
+        _mm_prefetch(reinterpret_cast<const char*>(ctrl), _MM_HINT_T0);
 #elif defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl));
 #endif
@@ -776,7 +775,7 @@ private:
     static void prefetch_write(char* ctrl) {
 #ifndef EMH_NO_WRITE_PREFETCH
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
-        _mm_prefetch((const char*)ctrl, _MM_HINT_T0);
+        _mm_prefetch(reinterpret_cast<const char*>(ctrl), _MM_HINT_T0);
 #elif defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl), 1, 1);
 #endif
@@ -787,9 +786,9 @@ private:
     static void prefetch_heap_block(char* ctrl) {
 #ifndef EMH_NO_PREFETCH
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
-        _mm_prefetch((const char*)ctrl, _MM_HINT_T0);
+        _mm_prefetch(reinterpret_cast<const char*>(ctrl), _MM_HINT_T0);
 #elif defined(_MSC_VER)
-        _mm_prefetch((const char*)ctrl);
+        _mm_prefetch(reinterpret_cast<const char*>(ctrl));
 #elif defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl));
 #endif
@@ -827,7 +826,7 @@ private:
             const auto vec = LOAD_EPI8(reinterpret_cast<decltype(&simd_empty)>(&_states[next_bucket]));
             auto maskf = static_cast<uint32_t>(MOVEMASK_EPI8(CMPEQ_EPI8(vec, filled)));
             if (maskf) {
-                prefetch_read((char*)&_pairs[next_bucket]);
+                prefetch_read(reinterpret_cast<char*>(&_pairs[next_bucket]));
                 do {
                     const auto fbucket = next_bucket + CTZ(maskf);
                     if (EMH_LIKELY(_eq(_pairs[fbucket], key)))
@@ -919,7 +918,7 @@ private:
             const auto maske = empty_delete(next_bucket);
             if (maske != 0) {
                 const auto ebucket = CTZ(maske) + next_bucket;
-                prefetch_write((char*)&_pairs[ebucket]);
+                prefetch_write(reinterpret_cast<char*>(&_pairs[ebucket]));
                 if (offset > _max_probe_length)
                     set_offset(offset);
                 return ebucket;

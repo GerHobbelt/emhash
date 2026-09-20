@@ -313,7 +313,7 @@ public:
         _num_buckets = other._num_buckets;
         _num_filled = other._num_filled;
         _mask = other._mask;
-        _loadlf = other._loadlf;
+        _mlf = other._mlf;
         _max_buckets = other._max_buckets;
         _time_out = other._time_out;
         auto opairs = other._pairs;
@@ -338,7 +338,7 @@ public:
         std::swap(_num_buckets, other._num_buckets);
         std::swap(_num_filled, other._num_filled);
         std::swap(_mask, other._mask);
-        std::swap(_loadlf, other._loadlf);
+        std::swap(_mlf, other._mlf);
         std::swap(_time_out, other._time_out);
         std::swap(_max_buckets, other._max_buckets);
     }
@@ -346,7 +346,6 @@ public:
     bool check_timeout(uint32_t bucket) {
         // check only main bucket
         if (IS_TIMEOUT(_pairs, bucket) || hash_bucket(EMH_KEY(_pairs, bucket)) == bucket) {
-            //_pairs[bucket].~PairT();
             clear_bucket(bucket);
             return true;
         }
@@ -398,11 +397,11 @@ public:
 
     const EqT& key_eq() const { return _eq; }
 
-    constexpr float max_load_factor() const { return (1 << 27) / static_cast<float>(_loadlf); }
+    constexpr float max_load_factor() const { return (1 << 27) / static_cast<float>(_mlf); }
 
     void max_load_factor(float value) {
         if (value < 0.95f && value > 0.2f)
-            _loadlf = static_cast<uint32_t>((1 << 27) / value);
+            _mlf = static_cast<uint32_t>((1 << 27) / value);
     }
 
     constexpr size_type max_size() const { return (1 << 30); }
@@ -711,7 +710,7 @@ public:
         if (NEXT_BUCKET(_pairs, bucket) == INACTIVE) {
             NEW_KVALUE(key, std::move(ValueT()), bucket);
         } else {
-            // TODO:replace the key
+            // Bucket holds a timed-out entry: replace its key and reset value.
             if (IS_TIMEOUT(_pairs, bucket)) {
                 EMH_KEY(_pairs, bucket) = key;
                 EMH_VAL(_pairs, bucket) = ValueT();
@@ -805,7 +804,7 @@ public:
 
     /// Make room for this many elements
     bool reserve(uint32_t num_elems) {
-        const uint32_t required_buckets = static_cast<uint32_t>(static_cast<uint64_t>(num_elems) * _loadlf >> 27);
+        const uint32_t required_buckets = static_cast<uint32_t>(static_cast<uint64_t>(num_elems) * _mlf >> 27);
         if (EMHASH_LIKELY(required_buckets < _mask))
             return false;
 
@@ -858,7 +857,7 @@ public:
             auto mbucket = _num_filled;
             char buff[255] = {0};
             snprintf(buff, sizeof(buff), "    _num_filled/aver_size/K.V/pack/ = %u/%2.lf/%s.%s/%zd", _num_filled,
-                     double(_num_filled) / mbucket, typeid(KeyT).name(), typeid(ValueT).name(), sizeof(_pairs[0]));
+                     static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(), typeid(ValueT).name(), sizeof(_pairs[0]));
 #if EMHASH_USER_LOG
             static uint32_t ihashs = 0;
             FDLOG() << "hash_nums = " << ihashs++ << "|" << __FUNCTION__ << "|" << buff << std::endl;
@@ -1042,7 +1041,7 @@ private:
         if (NEXT_BUCKET(_pairs, bucket) == INACTIVE || NEXT_BUCKET(_pairs, ++bucket) == INACTIVE)
             return bucket;
 
-        // for (uint32_t last = 2, slot = 3; ; slot += last, last = slot - last) {
+        // fibonacci probing: 1, 2, 3, 5, 8, 13, 21 ...
         for (uint32_t last = 1, slot = 4;; slot += ++last) {
             auto bucket1 = (bucket_from + slot) & _mask;
             if (NEXT_BUCKET(_pairs, bucket1) == INACTIVE || NEXT_BUCKET(_pairs, ++bucket1) == INACTIVE)
@@ -1168,7 +1167,7 @@ private:
     PairT* _pairs;
     HashT _hasher;
     EqT _eq;
-    uint32_t _loadlf;
+    uint32_t _mlf;
     uint32_t _num_buckets;
     uint32_t _max_buckets;
     uint32_t _mask;

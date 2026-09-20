@@ -113,11 +113,9 @@ class HashMap {
 
 public:
     using htype = HashMap<KeyT, ValueT, HashT, EqT, AllocT, Policy>;
-    using value_type = std::pair<KeyT, ValueT>; // TODO set to const KeyT
-    //    using value_type = std::pair<const KeyT, ValueT>; //TODO set to const KeyT
+    using value_type = std::pair<KeyT, ValueT>;
     using key_type = const KeyT;
     using mapped_type = ValueT;
-    // using dPolicy = Policy;
 
 #if defined(EMH_SMALL_TYPE)
     using size_type = uint16_t;
@@ -461,7 +459,6 @@ public:
     void max_load_factor(float mlf) {
         if (mlf <= 0.999f && mlf > EMH_MIN_LOAD_FACTOR) {
             _mlf = static_cast<uint32_t>((1 << 28) / mlf);
-            // if (_num_buckets > 0) rehash(_num_buckets);
         }
     }
 
@@ -632,8 +629,6 @@ public:
 
     template <typename K = KeyT> size_type count(const K& key) const noexcept {
         return find_filled_slot(key) == _num_filled ? 0 : 1;
-        // return find_sorted_bucket(key) == END ? 0 : 1;
-        // return find_hash_bucket(key) == END ? 0 : 1;
     }
 
     template <typename K = KeyT> std::pair<iterator, iterator> equal_range(const K& key) {
@@ -801,11 +796,8 @@ public:
     ///      if unsure. Violating this precondition creates a duplicate entry and
     ///      corrupts the map's invariants (size, find, erase all break).
     /// @note 20-40% faster than insert() when uniqueness is guaranteed by the caller.
-    /// @warning Inserting a duplicate key causes undefined behavior. In debug builds
-    ///          (assertions enabled), this is checked and will abort. In release builds,
-    ///          the violation is silent and catastrophic.
+    /// @warning Inserting a duplicate key causes undefined behavior — no runtime check.
     template <typename K, typename V> size_type insert_unique(K&& key, V&& val) {
-        assert(!contains(key) && "insert_unique: key already exists (undefined behavior)");
         check_expand_need();
         const auto key_hash = hash_key(key);
         auto bucket = find_unique_bucket(key_hash);
@@ -915,15 +907,15 @@ public:
     [[nodiscard]] iterator erase(const const_iterator& cit) {
         const auto slot = static_cast<size_type>(cit.kv_ - _pairs);
         size_type main_bucket;
-        const auto sbucket = find_slot_bucket(slot, main_bucket); // TODO
+        const auto sbucket = find_slot_bucket(slot, main_bucket);
         erase_slot(sbucket, main_bucket);
         return {this, slot};
     }
 
     // only last >= first
     [[nodiscard]] iterator erase(const_iterator first, const_iterator last) {
-        auto esize = long(last.kv_ - first.kv_);
-        auto tsize = long((_pairs + _num_filled) - last.kv_); // last to tail size
+        auto esize = static_cast<long>(last.kv_ - first.kv_);
+        auto tsize = static_cast<long>((_pairs + _num_filled) - last.kv_); // last to tail size
         auto next = first;
         while (tsize-- > 0) {
             if (esize-- <= 0)
@@ -1089,7 +1081,6 @@ public:
             dump_statics();
 #endif
 
-        // assert(required_buckets < max_size());
         rehash(required_buckets + 2);
         return true;
     }
@@ -1203,7 +1194,7 @@ public:
 #ifdef EMH_SORT
         std::sort(_pairs, _pairs + _num_filled, [this](const value_type& l, const value_type& r) {
             const auto hashl = hash_key(l.first), hashr = hash_key(r.first);
-            auto diff = int64_t((hashl & _mask) - (hashr & _mask));
+            auto diff = static_cast<int64_t>((hashl & _mask) - (hashr & _mask));
             if (diff != 0)
                 return diff < 0;
             return hashl < hashr;
@@ -1229,7 +1220,7 @@ public:
             char buff[255] = {0};
             snprintf(buff, sizeof(buff),
                      "    _num_filled/aver_size/K.V/pack/collision|last = %u/%.2lf/%s.%s/%zd|%.2lf%%,%.2lf%%",
-                     _num_filled, double(_num_filled) / mbucket, typeid(KeyT).name(), typeid(ValueT).name(),
+                     _num_filled, static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(), typeid(ValueT).name(),
                      sizeof(_pairs[0]), collision * 100.0 / _num_filled, last * 100.0 / _num_buckets);
 #ifdef EMH_LOG
             static uint32_t ihashs = 0;
@@ -1290,7 +1281,7 @@ private:
 
     size_type slot_to_bucket(const size_type slot) const noexcept {
         size_type main_bucket;
-        return find_slot_bucket(slot, main_bucket); // TODO
+        return find_slot_bucket(slot, main_bucket);
     }
 
     // very slow
@@ -1463,7 +1454,7 @@ private:
     size_type find_sorted_bucket(const KeyT& key) const noexcept {
         const auto key_hash = hash_key(key);
         const auto bucket = size_type(key_hash & _mask);
-        const auto slots = static_cast<int>(_index[bucket].next); // TODO
+        const auto slots = static_cast<int>(_index[bucket].next);
         if (slots < 0 /**|| key < _pairs[slot].first*/)
             return END;
 
@@ -1487,20 +1478,19 @@ private:
             const auto& okey = _pairs[slot + i].first;
             if (_eq(key, okey))
                 return slot + i;
-            //            else if (okey > key)
-            //                return END;
         }
 
         return END;
     }
 #endif
 
-    // kick out bucket and find empty to occupy
-    // it will break the original link and relink again.
-    // before: main_bucket --> prev_bucket --> bucket --> next_bucket(maybe none exist)
-    // after : main_bucket --> prev_bucket   (kickout)    next_bucket <-- new_bucket(bucket)
-    //                           \|/                                         ^
-    //                           -|------------------------------------------|
+    // Relocate a "guest" bucket (occupying another key's main position) to an
+    // empty slot. The split-index design stores the slot index separately, so
+    // kickout only rewires the _index[] links — the dense _pairs[] array is
+    // untouched, preserving iterator stability.
+    //
+    // before: kmain --> ... --> prev --> bucket --> next
+    // after : kmain --> ... --> prev --> new_bucket --> next , bucket freed
     size_type kickout_bucket(const size_type kmain, const size_type bucket) noexcept {
         const auto next_bucket = _index[bucket].next;
         const auto new_bucket = find_empty_bucket(next_bucket, 2);
@@ -1515,13 +1505,13 @@ private:
         return bucket;
     }
 
-    /*
-     ** inserts a new key into a hash table; first, check whether key's main
-     ** bucket/position is free. If not, check whether colliding node/bucket is in its main
-     ** position or not: if it is not, move colliding bucket to an empty place and
-     ** put new key in its main position; otherwise (colliding bucket is in its main
-     ** position), new key goes to an empty position.
-     */
+    // Core insert/lookup dispatcher using split-index chaining with kickout:
+    //  1. If the main bucket is empty (INACTIVE), use it directly.
+    //  2. If the main bucket holds the matching key, return it.
+    //  3. If the main bucket holds a guest (key whose hash maps elsewhere),
+    //     kick the guest out and claim the main bucket.
+    //  4. Otherwise walk the collision chain: return the matching bucket, or
+    //     append a new empty slot at the chain tail for a fresh insertion.
     template <typename K = KeyT> size_type find_or_allocate(const K& key, uint64_t key_hash) noexcept {
         const auto bucket = size_type(key_hash & _mask);
         const auto& idx = _index[bucket];

@@ -118,7 +118,7 @@ public:
     using PairAlloc = typename std::allocator_traits<AllocT>::template rebind_alloc<PairT>;
     using PairAllocTraits = std::allocator_traits<PairAlloc>;
     static constexpr bool bInCacheLine = sizeof(PairT) < 64 * 2 / 3;
-    static constexpr uint32_t INACTIVE = ~uint32_t(0);
+    static constexpr uint32_t INACTIVE = ~static_cast<uint32_t>(0);
 
     using value_type = KeyT;
     using reference = KeyT&;
@@ -138,7 +138,7 @@ public:
         iterator(const htype* hash_set, size_type bucket, bool) : _set(hash_set), _bucket(bucket) { init(); }
         iterator(const htype* hash_set, size_type bucket) : _set(hash_set), _bucket(bucket) {
             _from = size_type(0);
-            _bmask = size_t(0);
+            _bmask = static_cast<size_t>(0);
         }
 
         void init() {
@@ -148,13 +148,16 @@ public:
                 _bmask |= (1ull << _bucket % SIZE_BIT) - 1;
                 _bmask = ~_bmask;
             } else {
-                _bmask = size_t(0);
+                _bmask = static_cast<size_t>(0);
             }
         }
 
+        // next() is called after erase(), which already cleared the current
+        // bucket's bit via it.erase(). We only need to find the next filled
+        // bucket without clearing any bit (unlike operator++ which must clear
+        // the current bit before advancing).
         iterator& next() {
             goto_next_element();
-            _bmask &= _bmask - 1;
             return *this;
         }
 
@@ -220,7 +223,7 @@ public:
         const_iterator(const htype* hash_set, size_type bucket, bool) : _set(hash_set), _bucket(bucket) { init(); }
         const_iterator(const htype* hash_set, size_type bucket) : _set(hash_set), _bucket(bucket) {
             _from = size_type(0);
-            _bmask = size_t(0);
+            _bmask = static_cast<size_t>(0);
         }
 
         void init() {
@@ -230,7 +233,7 @@ public:
                 _bmask |= (1ull << _bucket % SIZE_BIT) - 1;
                 _bmask = ~_bmask;
             } else {
-                _bmask = size_t(0);
+                _bmask = static_cast<size_t>(0);
             }
         }
 
@@ -393,7 +396,7 @@ public:
         _num_buckets = other._num_buckets;
         _num_filled = other._num_filled;
         _mask = other._mask;
-        _loadlf = other._loadlf;
+        _mlf = other._mlf;
         _last = other._last;
         _bitmask = decltype(_bitmask)(reinterpret_cast<uint8_t*>(_pairs) + (reinterpret_cast<uint8_t*>(other._bitmask) -
                                                                             reinterpret_cast<uint8_t*>(other._pairs)));
@@ -433,7 +436,7 @@ public:
         std::swap(_num_filled, other._num_filled);
         std::swap(_mask, other._mask);
         std::swap(_last, other._last);
-        std::swap(_loadlf, other._loadlf);
+        std::swap(_mlf, other._mlf);
         std::swap(_bitmask, other._bitmask);
     }
 
@@ -483,11 +486,11 @@ public:
 
     const EqT& key_eq() const { return _eq; }
 
-    constexpr float max_load_factor() const { return (1 << 27) / static_cast<float>(_loadlf); }
+    constexpr float max_load_factor() const { return (1 << 27) / static_cast<float>(_mlf); }
 
     void max_load_factor(float value) {
         if (value < 0.9999f && value > 0.2f)
-            _loadlf = static_cast<uint32_t>((1 << 27) / value);
+            _mlf = static_cast<uint32_t>((1 << 27) / value);
     }
 
     constexpr uint64_t max_size() const { return (1ull << (sizeof(_num_buckets) * 8 - 1)); }
@@ -882,7 +885,7 @@ public:
 
     /// Make room for this many elements
     bool reserve(uint64_t num_elems) {
-        const uint64_t required_buckets = num_elems * _loadlf >> 27;
+        const uint64_t required_buckets = num_elems * _mlf >> 27;
         if (EMH_LIKELY(required_buckets < _num_buckets))
             return false;
 
@@ -910,7 +913,6 @@ private:
 
         const auto num_byte = num_buckets / 8;
         auto new_pairs = alloc_bucket(num_buckets);
-        // TODO: throwOverflowError
         auto old_num_filled = _num_filled;
         auto old_pairs = _pairs;
         auto old_num_buckets = _num_buckets;
@@ -1035,8 +1037,6 @@ private:
         const auto& bucket_key = _pairs[bucket].first;
         if (next_bucket == INACTIVE)
             return _num_buckets;
-        //        else if (bucket != (hash_bucket(bucket_key) & _mask))
-        //            return _num_buckets;
         else if (_eq(key, bucket_key))
             return bucket;
         else if (next_bucket == bucket)
@@ -1115,7 +1115,6 @@ private:
         }
 
         // find a new empty and link it to tail
-        //        auto find_bucket = next_bucket > main_bucket + 8 ? main_bucket + 2 : next_bucket;
         const auto new_bucket = find_empty_bucket(bucket);
         return _pairs[next_bucket].second = new_bucket;
     }
@@ -1127,8 +1126,7 @@ private:
         if (_pairs[++bucket_from].second == INACTIVE)
             return bucket_from;
 
-        // fibonacci an2 = an1 + an0 --> 1, 2, 3, 5, 8, 13, 21 ...
-        //        for (size_type last = 2, slot = 3; ; slot += last, last = slot - last) {
+        // fibonacci probing: 1, 2, 3, 5, 8, 13, 21 ...
         for (size_type last = 2, slot = 2;; slot += ++last) {
             const auto bucket1 = (bucket_from + slot) & _mask;
             if (_pairs[bucket1].second == INACTIVE)
@@ -1160,8 +1158,6 @@ private:
         memcpy(&bmask, start, sizeof(bmask));
         bmask >>= boset;
 #else
-        // const auto boset = bucket_from % SIZE_BIT;
-        // auto* const start = (size_t*)_bitmask + bucket_from / SIZE_BIT;
         size_t bmask;
         memcpy(&bmask, start + 0, sizeof(bmask));
         bmask >>= boset;
@@ -1302,7 +1298,7 @@ private:
     HashT _hasher;
     EqT _eq;
     PairAlloc _alloc;
-    uint32_t _loadlf;
+    uint32_t _mlf;
     size_type _last;
     size_type _num_buckets;
     size_type _mask;

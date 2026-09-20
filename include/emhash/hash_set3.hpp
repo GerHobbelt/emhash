@@ -259,7 +259,7 @@ public:
 
     void clone(const HashSet& other) {
         _hasher = other._hasher;
-        _loadlf = other._loadlf;
+        _mlf = other._mlf;
         _main_mask = other._main_mask;
         _coll_mask = other._coll_mask;
 
@@ -346,7 +346,7 @@ public:
     void swap(HashSet& other) noexcept {
         std::swap(_hasher, other._hasher);
         std::swap(_eq, other._eq);
-        std::swap(_loadlf, other._loadlf);
+        std::swap(_mlf, other._mlf);
         std::swap(_main_mask, other._main_mask);
         std::swap(_coll_mask, other._coll_mask);
 
@@ -398,19 +398,17 @@ public:
     /// Returns average number of elements per bucket.
     float load_factor() const {
         return _total_buckets ? (static_cast<float>(size())) / _total_buckets : 0.0f;
-        // return (_num_colls / static_cast<float>(_colls_buckets));
-        // return (_num_mains / static_cast<float>(_mains_buckets + 1));
     }
 
     const HashT& hash_function() const { return _hasher; }
 
     const EqT& key_eq() const { return _eq; }
 
-    constexpr float max_load_factor() const { return static_cast<float>(1 << 13) / _loadlf; }
+    constexpr float max_load_factor() const { return static_cast<float>(1 << 13) / _mlf; }
 
     void max_load_factor(float value) {
         if (value < 0.99f && value > 0.2f)
-            _loadlf = static_cast<uint32_t>((1 << 13) / value);
+            _mlf = static_cast<uint32_t>((1 << 13) / value);
     }
 
     constexpr uint64_t max_size() const { return (1ull << (sizeof(_total_buckets) * 8 - 1)); }
@@ -578,7 +576,6 @@ public:
     void del_key(size_type bucket, const KeyT& key) {
         const auto main_bucket = hash_main_bucket(key);
         auto& bucket_size = EMH_BUCKET(_pairs, main_bucket);
-        // assert(bucket_size != INACTIVE);
 
         bucket_size -= 2;
         _num_colls -= 1;
@@ -655,7 +652,6 @@ public:
         return insert_unique(std::forward<Args>(args)...);
     }
 
-    // for private:
     size_type try_insert_mainbucket(const KeyT& key) {
         const auto main_bucket = hash_main_bucket(key);
         auto& bucket_size = EMH_BUCKET(_pairs, main_bucket);
@@ -725,7 +721,6 @@ public:
             return ++it;
         }
 
-        // assert(it->first == EMH_KEY(_pairs, it._bucket));
         const auto bucket = erase_bucket(it._bucket);
         del_key(bucket, EMH_KEY(_pairs, bucket));
         if (empty())
@@ -769,7 +764,6 @@ public:
 
     /// Make room for this many elements
     bool reserve(uint64_t num_elems) {
-        // auto required_buckets = (size_type)(((uint64_t)num_elems * _loadlf) >> 13);
         const auto required_buckets = num_elems * 10 / 8 + 2;
         if (EMH_LIKELY(required_buckets < _colls_buckets))
             return false;
@@ -864,7 +858,6 @@ public:
             auto& old_pair = old_pairs[src_bucket];
 
             auto next_bucket = EMH_BUCKET(_pairs, new_main_bucket);
-            // assert(next_bucket != INACTIVE);
             // check current bucket_key is in main bucket or not
             if (next_bucket != new_main_bucket)
                 next_bucket = find_last_bucket(next_bucket);
@@ -1188,7 +1181,7 @@ private:
     // the first cache line packed
     HashT _hasher;
     EqT _eq;
-    uint32_t _loadlf;
+    uint32_t _mlf;
     size_type _main_mask;
     size_type _coll_mask;
 

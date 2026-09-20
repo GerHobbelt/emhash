@@ -23,10 +23,20 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ----------------------------------------------------------------------------
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -pedantic)
-    # SSE2 for SIMD intrinsics (required for emilib hash maps)
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "i386|i686|x86|AMD64|amd64|x86_64")
-        add_compile_options(-msse2)
+    # SIMD level for x86 (emilib headers use SSE2 intrinsics).
+    # Configurable: cmake -DEMH_SIMD_LEVEL=AVX2|SSE2|NONE ...
+    set(EMH_SIMD_LEVEL "SSE2" CACHE STRING "SIMD level for x86 (NONE/SSE/SSE2/AVX/AVX2/AVX512)")
+    if(NOT EMH_SIMD_LEVEL STREQUAL "NONE")
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "i386|i686|x86|AMD64|amd64|x86_64")
+            string(TOLOWER "${EMH_SIMD_LEVEL}" _emh_simd_flag)
+            if(_emh_simd_flag STREQUAL "avx512")
+                set(_emh_simd_flag "avx512f")
+            endif()
+            add_compile_options(-m${_emh_simd_flag})
+            message(STATUS "emhash: SIMD enabled (-m${_emh_simd_flag})")
+        endif()
     endif()
+    unset(_emh_simd_flag)
     set(CMAKE_CXX_FLAGS_RELEASE "-O2 -flto=auto")
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
     # Optional sanitizer build: cmake -DEMHASH_SANITIZER=address|undefined|thread|memory
@@ -102,6 +112,7 @@ set(EMHASH_NEW_STRESS_TESTS
     test_highload
     test_bad_hash
     test_reserve_fix
+    test_million_stress
 )
 foreach(name ${EMHASH_NEW_STRESS_TESTS})
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/stress/${name}.cpp")
@@ -194,28 +205,9 @@ add_custom_target(emhash_test_help
     COMMAND ${CMAKE_COMMAND} -E echo "  all_tests     - all tests"
 )
 
-# ----------------------------------------------------------------------------
-# Debug targets (not part of CTest)
-# ----------------------------------------------------------------------------
-add_executable(debug_merge_msvc debug/debug_merge_msvc.cpp)
-target_compile_features(debug_merge_msvc PRIVATE cxx_std_17)
-target_include_directories(debug_merge_msvc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-
-add_executable(debug_merge_trace debug/debug_merge_trace.cpp)
-target_compile_features(debug_merge_trace PRIVATE cxx_std_17)
-target_include_directories(debug_merge_trace PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-
-add_executable(debug_merge_trace2 debug/debug_merge_trace2.cpp)
-target_compile_features(debug_merge_trace2 PRIVATE cxx_std_17)
-target_include_directories(debug_merge_trace2 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-
-add_executable(debug_erase_if debug/debug_erase_if.cpp)
-target_compile_features(debug_erase_if PRIVATE cxx_std_17)
-target_include_directories(debug_erase_if PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-
-add_executable(debug_erase_simple debug/debug_erase_simple.cpp)
-target_compile_features(debug_erase_simple PRIVATE cxx_std_17)
-target_include_directories(debug_erase_simple PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+# Debug targets are excluded from CI — they depend on uncommitted scratch files.
+# To build locally: cmake -B build && cmake --build build --target debug_xxx
+# (only if the corresponding debug/*.cpp files exist locally)
 
 # ----------------------------------------------------------------------------
 # Google Benchmark (optional, off by default) — unchanged

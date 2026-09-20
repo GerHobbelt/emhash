@@ -322,7 +322,7 @@ public:
         _num_buckets = other._num_buckets;
         _num_filled = other._num_filled;
         _mask = other._mask;
-        _loadlf = other._loadlf;
+        _mlf = other._mlf;
         _max_buckets = other._max_buckets;
         _sum_orderid = other._sum_orderid;
         auto opairs = other._pairs;
@@ -346,7 +346,7 @@ public:
         std::swap(_num_buckets, other._num_buckets);
         std::swap(_num_filled, other._num_filled);
         std::swap(_mask, other._mask);
-        std::swap(_loadlf, other._loadlf);
+        std::swap(_mlf, other._mlf);
         std::swap(_max_buckets, other._max_buckets);
         std::swap(_sum_orderid, other._sum_orderid);
     }
@@ -394,11 +394,11 @@ public:
 
     const EqT& key_eq() const { return _eq; }
 
-    constexpr float max_load_factor() const { return (1 << 27) / static_cast<float>(_loadlf); }
+    constexpr float max_load_factor() const { return (1 << 27) / static_cast<float>(_mlf); }
 
     void max_load_factor(float value) {
         if (value < 0.95f && value > 0.2f)
-            _loadlf = static_cast<uint32_t>((1 << 27) / value);
+            _mlf = static_cast<uint32_t>((1 << 27) / value);
     }
 
     constexpr size_type max_size() const { return (1 << 30); }
@@ -774,7 +774,7 @@ public:
 
     /// Make room for this many elements
     bool reserve(uint64_t num_elems) {
-        const uint32_t required_buckets = static_cast<uint32_t>(num_elems * _loadlf >> 27);
+        const uint32_t required_buckets = static_cast<uint32_t>(num_elems * _mlf >> 27);
         if (EMHASH_LIKELY(required_buckets < _num_buckets))
             return false;
 
@@ -796,13 +796,14 @@ public:
 #if EMHASH_REHASH_LOG || EMHASH_USE_LOG
         const auto ts = clock();
 #endif
-        const auto medium_id = uint32_t(_sum_orderid / _num_filled);
+        const auto medium_id = static_cast<uint32_t>(_sum_orderid / _num_filled);
 
 #if EMHASH_TIME_DELAY
         const auto tnows = entry<KeyT, ValueT>::next_orderid();
 #endif
 
-        // TODO: iterator from rand pos.
+        // Iterate from bucket 0 to prune expired entries. A random start
+        // position could reduce worst-case latency but is not implemented.
         for (uint32_t src_bucket = 0; src_bucket < _num_buckets; src_bucket++) {
             if (NEXT_BUCKET(_pairs, src_bucket) == INACTIVE)
                 continue;
@@ -816,8 +817,7 @@ public:
                 } else if (tnows < orderid + EMHASH_TIME_DELAY)
                     continue;
 #else
-                // TODO: set max used time or erased buckets to break.
-                // if (old_nums - _num_filled > 10000) break;
+                // Entry is still within its TTL window; skip eviction.
                 continue;
 #endif
             }
@@ -907,8 +907,6 @@ public:
 #endif
 
         free(old_pairs);
-        //        if (sum_orderid != _sum_orderid)
-        //            printf("%ld != %ld %ld\n", sum_orderid , _sum_orderid, osum);
         assert(old_num_filled == _num_filled);
     }
 
@@ -1106,7 +1104,7 @@ private:
         if (NEXT_BUCKET(_pairs, bucket) == INACTIVE || NEXT_BUCKET(_pairs, ++bucket) == INACTIVE)
             return bucket;
 
-        // for (uint32_t last = 2, slot = 3; ; slot += last, last = slot - last) {
+        // fibonacci probing: 1, 2, 3, 5, 8, 13, 21 ...
         for (uint32_t last = 1, slot = 4;; slot += ++last) {
             auto bucket1 = (bucket_from + slot) & _mask;
             if (NEXT_BUCKET(_pairs, bucket1) == INACTIVE || NEXT_BUCKET(_pairs, ++bucket1) == INACTIVE)
@@ -1232,7 +1230,7 @@ private:
     PairT* _pairs;
     HashT _hasher;
     EqT _eq;
-    uint32_t _loadlf;
+    uint32_t _mlf;
     uint32_t _num_buckets;
     uint32_t _max_buckets;
     uint32_t _mask;

@@ -126,7 +126,8 @@ TEST_CASE_TEMPLATE("set move ctor and assign", Set, AllIntSets) {
 }
 
 TEST_CASE_TEMPLATE("set swap", Set, AllIntSets) {
-    Set a, b;
+    Set a;
+    Set b;
     for (int i = 0; i < 10; ++i) a.insert(i);
     for (int i = 100; i < 110; ++i) b.insert(i);
 
@@ -163,10 +164,10 @@ TEST_CASE_TEMPLATE("set load factor and bucket count", Set, AllIntSets) {
 
     CHECK(s.bucket_count() > 0);
     float lf = s.load_factor();
-    CHECK(lf >= 0.0f);
-    CHECK(lf < 1.0f);
+    CHECK(lf >= 0.0F);
+    CHECK(lf < 1.0F);
     float max_lf = s.max_load_factor();
-    CHECK(max_lf > 0.0f);
+    CHECK(max_lf > 0.0F);
     (void)lf; (void)max_lf;
 }
 
@@ -186,7 +187,8 @@ TEST_CASE_TEMPLATE("set insert_unique", Set, AllIntSets) {
 }
 
 TEST_CASE_TEMPLATE("set merge", Set, AllIntSets) {
-    Set a, b;
+    Set a;
+    Set b;
     for (int i = 0; i < 20; ++i) a.insert(i);
     for (int i = 10; i < 30; ++i) b.insert(i);
 
@@ -196,7 +198,33 @@ TEST_CASE_TEMPLATE("set merge", Set, AllIntSets) {
     for (int i = 0; i < 30; ++i) CHECK(a.contains(i));
 }
 
-TEST_CASE_TEMPLATE("set erase_if" * doctest::skip("TODO: fix erase_if bug in emilib"), Set, AllIntSets) {
+TEST_CASE_TEMPLATE("set merge empty dst", Set, AllIntSets) {
+    // Coverage: merge on empty set triggers *this = std::move(rhs)
+    Set a;  // empty
+    Set b;
+    for (int i = 0; i < 20; ++i) b.insert(i);
+    CHECK(a.empty());
+    CHECK(b.size() == 20);
+
+    a.merge(b);
+    CHECK(a.size() == 20);
+    CHECK(b.empty());  // b was moved
+    for (int i = 0; i < 20; ++i) CHECK(a.contains(i));
+}
+
+TEST_CASE_TEMPLATE("set copy from empty", Set, AllIntSets) {
+    // Coverage: copy/clone from empty source triggers clear() or equivalent
+    Set a;
+    for (int i = 0; i < 10; ++i) a.insert(i);
+    CHECK(a.size() == 10);
+
+    Set b;  // empty
+    a = b;  // copy from empty
+    CHECK(a.empty());
+    CHECK(b.empty());
+}
+
+TEST_CASE_TEMPLATE("set erase_if", Set, AllIntSets) {
     Set s;
     for (int i = 0; i < 100; ++i) s.insert(i);
 

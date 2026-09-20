@@ -87,9 +87,8 @@ class HashSet {
 
 public:
     using htype = HashSet<KeyT, HashT, EqT, AllocT, Policy>;
-    using value_type = KeyT; // TODO set to const KeyT
+    using value_type = KeyT;
     using key_type = const KeyT;
-    // using dPolicy = Policy;
 
 #if defined(EMH_SMALL_TYPE)
     using size_type = uint16_t;
@@ -612,8 +611,6 @@ public:
 
     template <typename K = KeyT> size_type count(const K& key) const noexcept {
         return find_filled_slot(key) == _num_filled ? 0 : 1;
-        // return find_sorted_bucket(key) == END ? 0 : 1;
-        // return find_hash_bucket(key) == END ? 0 : 1;
     }
 
     template <typename K = KeyT> std::pair<iterator, iterator> equal_range(const K& key) {
@@ -696,7 +693,6 @@ public:
     ///      corrupts the set's invariants.
     /// @warning Same as HashMap::insert_unique — duplicate keys cause UB.
     template <typename K> size_type do_unique(K&& key) {
-        assert(!contains(key) && "insert_unique: key already exists (undefined behavior)");
         check_expand_need();
         const auto key_hash = hash_key(key);
         auto bucket = find_unique_bucket(key_hash);
@@ -751,15 +747,15 @@ public:
     iterator erase(const const_iterator& cit) {
         const auto slot = static_cast<size_type>(cit.kv_ - _pairs);
         size_type main_bucket;
-        const auto sbucket = find_slot_bucket(slot, main_bucket); // TODO
+        const auto sbucket = find_slot_bucket(slot, main_bucket);
         erase_slot(sbucket, main_bucket);
         return {this, slot};
     }
 
     // only last >= first
     iterator erase(const_iterator first, const_iterator last) {
-        auto esize = long(last.kv_ - first.kv_);
-        auto tsize = long((_pairs + _num_filled) - last.kv_); // last to tail size
+        auto esize = static_cast<long>(last.kv_ - first.kv_);
+        auto tsize = static_cast<long>((_pairs + _num_filled) - last.kv_); // last to tail size
         auto next = first;
         while (tsize-- > 0) {
             if (esize-- <= 0)
@@ -916,7 +912,6 @@ public:
             dump_statics();
 #endif
 
-        // assert(required_buckets < max_size());
         rehash(required_buckets + 2);
         return true;
     }
@@ -1023,7 +1018,7 @@ public:
 #ifdef EMH_SORT
         std::sort(_pairs, _pairs + _num_filled, [this](const value_type& l, const value_type& r) {
             const auto hashl = hash_key(l.first), hashr = hash_key(r.first);
-            auto diff = int64_t((hashl & _mask) - (hashr & _mask));
+            auto diff = static_cast<int64_t>((hashl & _mask) - (hashr & _mask));
             if (diff != 0)
                 return diff < 0;
             return hashl < hashr;
@@ -1049,7 +1044,7 @@ public:
             char buff[255] = {0};
             snprintf(buff, sizeof(buff),
                      "    _num_filled/aver_size/K.V/pack/collision|last = %u/%.2lf/%s/%zd|%.2lf%%,%.2lf%%", _num_filled,
-                     double(_num_filled) / mbucket, typeid(KeyT).name(), sizeof(_pairs[0]),
+                     static_cast<double>(_num_filled) / mbucket, typeid(KeyT).name(), sizeof(_pairs[0]),
                      collision * 100.0 / _num_filled, last * 100.0 / _num_buckets);
 #ifdef EMH_LOG
             static uint32_t ihashs = 0;
@@ -1079,7 +1074,7 @@ private:
 
     size_type slot_to_bucket(const size_type slot) const noexcept {
         size_type main_bucket;
-        return find_slot_bucket(slot, main_bucket); // TODO
+        return find_slot_bucket(slot, main_bucket);
     }
 
     // very slow
@@ -1250,7 +1245,7 @@ private:
     size_type find_sorted_bucket(const KeyT& key) const noexcept {
         const auto key_hash = hash_key(key);
         const auto bucket = size_type(key_hash & _mask);
-        const auto slots = static_cast<int>(_index[bucket].next); // TODO
+        const auto slots = static_cast<int>(_index[bucket].next);
         if (slots < 0 /**|| key < _pairs[slot].first*/)
             return END;
 
@@ -1274,8 +1269,6 @@ private:
             const auto& okey = _pairs[slot + i];
             if (_eq(key, okey))
                 return slot + i;
-            //            else if (okey > key)
-            //                return END;
         }
 
         return END;
