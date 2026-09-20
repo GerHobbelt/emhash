@@ -23,13 +23,13 @@
 #pragma once
 
 #ifdef __has_include
-#  if __has_include("config.hpp")
-#    include "config.hpp"
-#  elif __has_include("emhash/config.hpp")
-#    include "emhash/config.hpp"
-#  endif
+#if __has_include("config.hpp")
+#include "config.hpp"
+#elif __has_include("emhash/config.hpp")
+#include "emhash/config.hpp"
+#endif
 #else
-#  include "config.hpp"
+#include "config.hpp"
 #endif
 
 #include <cstring>
@@ -62,7 +62,9 @@ inline static uint32_t nowts() {
 #if EMHASH_LRU_TIME > 0
     return EMHASH_LRU_TIME;
 #else
-    return (uint32_t)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count());
 #endif
 }
 
@@ -128,7 +130,7 @@ template <typename First, typename Second> struct entry {
     uint32_t timeout;
 }; // __attribute__ ((packed));
 
-/// A cache-fristd::endly hash table with open addressing, linear/qua probing and power-of-two capacity
+/// A cache-friendly hash table with open addressing, linear/qua probing and power-of-two capacity
 template <typename KeyT, typename ValueT, typename HashT = std::hash<KeyT>, typename EqT = std::equal_to<KeyT>>
 class lru_cache {
 private:
@@ -251,7 +253,9 @@ public:
     }
 
     lru_cache(const lru_cache& other) {
-        _pairs = (PairT*)malloc((2 + other._num_buckets) * sizeof(PairT));
+        _pairs = static_cast<PairT*>(malloc((2 + other._num_buckets) * sizeof(PairT)));
+        if (!_pairs)
+            throw std::bad_alloc();
         clone(other);
     }
 
@@ -265,7 +269,7 @@ public:
     lru_cache(std::initializer_list<std::pair<KeyT, ValueT>> il)
     {
         init(il.size() * 2);
-        reserve((uint32_t)il.size());
+        reserve(static_cast<uint32_t>(il.size()));
         for (auto begin = il.begin(); begin != il.end(); ++begin)
             insert(*begin);
     }
@@ -280,7 +284,9 @@ public:
 
         if (_num_buckets != other._num_buckets) {
             free(_pairs);
-            _pairs = (PairT*)malloc((2 + other._num_buckets) * sizeof(PairT));
+            _pairs = static_cast<PairT*>(malloc((2 + other._num_buckets) * sizeof(PairT)));
+            if (!_pairs)
+                throw std::bad_alloc();
         }
 
         clone(other);
@@ -392,11 +398,11 @@ public:
 
     const EqT& key_eq() const { return _eq; }
 
-    constexpr float max_load_factor() const { return (1 << 27) / (float)_loadlf; }
+    constexpr float max_load_factor() const { return (1 << 27) / static_cast<float>(_loadlf); }
 
     void max_load_factor(float value) {
         if (value < 0.95f && value > 0.2f)
-            _loadlf = (uint32_t)((1 << 27) / value);
+            _loadlf = static_cast<uint32_t>((1 << 27) / value);
     }
 
     constexpr size_type max_size() const { return (1 << 30); }
@@ -564,7 +570,7 @@ public:
     }
 
     /// Const version of the above
-    ValueT* try_get(const KeyT& key) const noexcept {
+    const ValueT* try_get(const KeyT& key) const noexcept {
         const auto bucket = find_filled_bucket(key);
         return bucket == _num_buckets ? nullptr : &EMH_VAL(_pairs, bucket);
     }
@@ -799,7 +805,7 @@ public:
 
     /// Make room for this many elements
     bool reserve(uint32_t num_elems) {
-        const uint32_t required_buckets = static_cast<uint32_t>((uint64_t)num_elems * _loadlf >> 27);
+        const uint32_t required_buckets = static_cast<uint32_t>(static_cast<uint64_t>(num_elems) * _loadlf >> 27);
         if (EMHASH_LIKELY(required_buckets < _mask))
             return false;
 
@@ -816,7 +822,7 @@ public:
             num_buckets *= 2;
         }
 
-        auto new_pairs = (PairT*)malloc((2 + num_buckets) * sizeof(PairT));
+        auto new_pairs = static_cast<PairT*>(malloc((2 + num_buckets) * sizeof(PairT)));
         auto old_num_filled = _num_filled;
         auto old_pairs = _pairs;
         _pairs = new_pairs;
@@ -1104,7 +1110,7 @@ private:
 #if __SIZEOF_INT128__
         __uint128_t r = key;
         r *= KC;
-        return (uint64_t)(r >> 64) + (uint64_t)r;
+        return static_cast<uint64_t>(r >> 64) + static_cast<uint64_t>(r);
 #elif _WIN64
         uint64_t high;
         return _umul128(key, KC, &high) + high;
@@ -1132,20 +1138,20 @@ private:
     // the first cache line packed
     template <typename UType, typename std::enable_if<std::is_integral<UType>::value, uint32_t>::type = 0>
     inline uint32_t hash_bucket(const UType key) const {
-        return (uint32_t)hash64(key) & _mask;
+        return static_cast<uint32_t>(hash64(key)) & _mask;
     }
 
     template <typename UType, typename std::enable_if<std::is_same<UType, std::string>::value, uint32_t>::type = 0>
     inline uint32_t hash_bucket(const UType& key) const {
 #ifdef WYHASH_LITTLE_ENDIAN
-        return (uint32_t)(wyhash(key.c_str(), key.size(), key.size()) & _mask);
+        return static_cast<uint32_t>(wyhash(key.c_str(), key.size(), key.size()) & _mask);
 #elif EMHASH_BKR_HASH
         uint32_t hash = 0;
         for (int i = 0, j = 1; i < key.size(); i += j++)
             hash = key[i] + hash * 131;
         return hash & _mask;
 #else
-        return (uint32_t)(_hasher(key) & _mask);
+        return static_cast<uint32_t>(_hasher(key) & _mask);
 #endif
     }
 
@@ -1153,7 +1159,7 @@ private:
               typename std::enable_if<!std::is_integral<UType>::value && !std::is_same<UType, std::string>::value,
                                       uint32_t>::type = 0>
     inline uint32_t hash_bucket(const UType& key) const {
-        return (uint32_t)(_hasher(key) & _mask);
+        return static_cast<uint32_t>(_hasher(key) & _mask);
     }
 
 private:

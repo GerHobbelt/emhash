@@ -38,9 +38,9 @@
 #ifndef __clang__
 #include <zmmintrin.h>
 #endif
-#elif __x86_64__
+#elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) || defined(_M_X64)
 #include <x86intrin.h>
-#else
+#elif defined(__ARM_ARCH) || defined(__aarch64__) || defined(__arm__)
 #include "sse2neon.h"
 #endif
 
@@ -85,8 +85,6 @@ constexpr static uint8_t set_simd_bytes = sizeof(set_simd_empty) / sizeof(uint8_
 #define LOADU_EPI8 _mm512_loadu_si512
 #define MOVEMASK_EPI8 _mm512_movemask_epi8 // avx512 error
 #define CMPEQ_EPI8 _mm512_cmpeq_epi16_mask
-#else
-// TODO arm neon
 #endif
 
 // find filled or empty
@@ -103,7 +101,7 @@ inline static uint32_t CTZ(uint64_t n) {
     auto index = __builtin_ctzl(n);
 #endif
 
-    return (uint32_t)index;
+    return static_cast<uint32_t>(index);
 }
 #endif
 
@@ -324,7 +322,7 @@ public:
     /// Returns average number of elements per bucket.
     float load_factor() const { return _num_buckets ? _num_filled / static_cast<float>(_num_buckets) : 0.0f; }
 
-    float max_load_factor(float lf = 8.0f / 9) { return 7 / 8.0f; }
+    float max_load_factor(float lf = 8.0f / 9) { (void)lf; return 7 / 8.0f; }
 
     constexpr uint64_t max_size() const { return 1ull << (sizeof(_num_buckets) * 8 - 1); }
     constexpr uint64_t max_bucket_count() const { return max_size(); }
@@ -393,7 +391,7 @@ public:
 
     std::pair<iterator, bool> emplace(KeyT&& key) { return insert(std::move(key)); }
 
-    std::pair<iterator, bool> insert(iterator it, const KeyT& key) { return insert(key); }
+    std::pair<iterator, bool> insert([[maybe_unused]] iterator it, const KeyT& key) { return insert(key); }
 
     template <typename T> void insert(T beginc, T endc) {
         reserve(endc - beginc + _num_filled);
@@ -545,7 +543,9 @@ public:
         // auto old_num_buckets = _num_buckets;
         auto old_states = _states;
         auto old_keys = _keys;
+#if EMH_DUMP
         auto max_probe_length = _max_probe_length;
+#endif
 
         _num_filled = 0;
         _num_buckets = num_buckets;
@@ -595,7 +595,7 @@ private:
     // Find the bucket with this key, or return (size_t)-1
     template <typename KeyLike> size_t find_filled_bucket(const KeyLike& key) const {
         const auto key_hash = _hasher(key);
-        auto next_bucket = (size_t)(key_hash & _mask);
+        auto next_bucket = static_cast<size_t>(key_hash & _mask);
         const char keymask = KEYHASH_MASK(key_hash);
         const auto filled = SET1_EPI8(keymask);
         int i = _max_probe_length;
@@ -635,10 +635,10 @@ private:
     // Find the bucket with this key, or return a good empty bucket to place the key in.
     // In the latter case, the bucket is expected to be filled.
     template <typename KeyLike> size_t find_or_allocate(const KeyLike& key, uint64_t key_hash) {
-        size_t hole = (size_t)-1;
+        size_t hole = static_cast<size_t>(-1);
         const char keymask = (char)KEYHASH_MASK(key_hash);
         const auto filled = SET1_EPI8(keymask);
-        const auto bucket = (size_t)(key_hash & _mask);
+        const auto bucket = static_cast<size_t>(key_hash & _mask);
         const auto round = bucket + _max_probe_length;
         auto next_bucket = bucket, i = bucket;
 
@@ -659,7 +659,7 @@ private:
             // 2. find empty
             const auto maske = MOVEMASK_EPI8(CMPEQ_EPI8(vec, set_simd_empty));
             if (maske != 0) {
-                const auto ebucket = hole == (size_t)-1 ? next_bucket + CTZ(maske) : hole;
+                const auto ebucket = hole == static_cast<size_t>(-1) ? next_bucket + CTZ(maske) : hole;
                 const int offset = (ebucket - bucket + _num_buckets) & _mask;
                 if (EMH_UNLIKELY(offset > _max_probe_length))
                     _max_probe_length = offset;
@@ -667,7 +667,7 @@ private:
             }
 
             // 3. find erased
-            if (hole == (size_t)-1) {
+            if (hole == static_cast<size_t>(-1)) {
                 const auto maskd = MOVEMASK_EPI8(CMPEQ_EPI8(vec, set_simd_delete));
                 if (maskd != 0)
                     hole = next_bucket + CTZ(maskd);
@@ -684,7 +684,7 @@ private:
                 break;
         }
 
-        if (EMH_LIKELY(hole != (size_t)-1))
+        if (EMH_LIKELY(hole != static_cast<size_t>(-1)))
             return hole;
 
         return find_empty_slot(next_bucket, i - bucket);

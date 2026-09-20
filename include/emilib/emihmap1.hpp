@@ -36,9 +36,9 @@
 
 #ifdef _WIN32
 #include <intrin.h>
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) || defined(__amd64__) || defined(__i386__) || defined(__i686__) || defined(_M_IX86) || defined(_M_X64)
 #include <x86intrin.h>
-#else
+#elif defined(__ARM_ARCH) || defined(__aarch64__) || defined(__arm__)
 #include "sse2neon.h"
 #endif
 
@@ -105,7 +105,7 @@ inline static uint32_t CTZ(uint32_t n) {
     auto index = __builtin_ctzl((unsigned long)n);
 #endif
 
-    return (uint32_t)index;
+    return static_cast<uint32_t>(index);
 }
 
 /// A cache-friendly hash table with open addressing, linear probing and power-of-two capacity
@@ -132,17 +132,17 @@ public:
     template <typename UType, typename std::enable_if<!std::is_integral<UType>::value, int8_t>::type = 0>
     inline int8_t hash_key2(size_t& main_bucket, const UType& key) const {
         const auto key_hash = _hasher(key);
-        main_bucket = size_t(key_hash & _mask);
+        main_bucket = static_cast<size_t>(key_hash & _mask);
         main_bucket -= main_bucket % simd_bytes;
-        return (int8_t)((size_t)(key_hash % 253) + (size_t)EFILLED);
+        return static_cast<int8_t>(static_cast<size_t>(key_hash % 253) + static_cast<size_t>(EFILLED));
     }
 
     template <typename UType, typename std::enable_if<std::is_integral<UType>::value, int8_t>::type = 0>
     inline int8_t hash_key2(size_t& main_bucket, const UType& key) const {
         const auto key_hash = _hasher(key);
-        main_bucket = size_t(key_hash & _mask);
+        main_bucket = static_cast<size_t>(key_hash & _mask);
         main_bucket -= main_bucket % simd_bytes;
-        return (int8_t)((size_t)(key_hash % 253) + (size_t)EFILLED);
+        return static_cast<int8_t>(static_cast<size_t>(key_hash % 253) + static_cast<size_t>(EFILLED));
     }
 
 #if 1
@@ -171,7 +171,7 @@ public:
             const auto bucket_count = _map->bucket_count();
             if (_bucket < bucket_count) {
                 _bmask = _map->filled_mask(_from);
-                _bmask &= (size_t)~((1ull << (_bucket % simd_bytes)) - 1);
+                _bmask &= static_cast<size_t>(~((1ull << (_bucket % simd_bytes)) - 1));
             } else {
                 _bmask = 0;
             }
@@ -217,7 +217,8 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask = 0;        size_t _bucket;
+        size_t _bmask = 0;
+        size_t _bucket;
         size_t _from;
     };
 
@@ -241,7 +242,7 @@ public:
             const auto bucket_count = _map->bucket_count();
             if (_bucket < bucket_count) {
                 _bmask = _map->filled_mask(_from);
-                _bmask &= (size_t)~((1ull << (_bucket % simd_bytes)) - 1);
+                _bmask &= static_cast<size_t>(~((1ull << (_bucket % simd_bytes)) - 1));
             } else {
                 _bmask = 0;
             }
@@ -287,7 +288,8 @@ public:
 
     public:
         const htype* _map;
-        size_t _bmask = 0;        size_t _bucket;
+        size_t _bmask = 0;
+        size_t _bucket;
         size_t _from;
     };
 
@@ -308,13 +310,13 @@ public:
     }
 
     HashMap(std::initializer_list<value_type> il) noexcept {
-        rehash((size_t)il.size());
+        rehash(static_cast<size_t>(il.size()));
         for (auto it = il.begin(); it != il.end(); ++it)
             insert(*it);
     }
 
     template <class InputIt> HashMap(InputIt first, InputIt last, size_t bucket_count = 4) noexcept {
-        rehash((size_t)std::distance(first, last) + bucket_count);
+        rehash(static_cast<size_t>(std::distance(first, last)) + bucket_count);
         for (; first != last; ++first)
             insert(*first);
     }
@@ -400,12 +402,12 @@ public:
 
     /// Returns average number of elements per bucket.
     float load_factor() const noexcept {
-        return _num_buckets ? static_cast<float>(_num_filled) / (float)bucket_to_slot(_num_buckets) : 0.0f;
+        return _num_buckets ? static_cast<float>(_num_filled) / static_cast<float>(bucket_to_slot(_num_buckets)) : 0.0f;
     }
 
     float max_load_factor(float lf = 7.0f / 8) noexcept {
         (void)lf;
-        return (float)MXLOAD_FACTOR / (MXLOAD_FACTOR + 1);
+        return static_cast<float>(MXLOAD_FACTOR) / (MXLOAD_FACTOR + 1);
     }
 
     constexpr uint64_t max_size() const { return 1ull << (sizeof(_num_buckets) * 8 - 1); }
@@ -545,7 +547,7 @@ public:
 #endif
 
     template <typename Iter> void insert(Iter beginc, Iter endc) noexcept {
-        rehash(size_t(endc - beginc) + _num_filled);
+        rehash(static_cast<size_t>(endc - beginc) + _num_filled);
         for (; beginc != endc; ++beginc)
             do_insert(beginc->first, beginc->second);
     }
@@ -561,7 +563,7 @@ public:
     }
 
     void insert(std::initializer_list<value_type> ilist) noexcept {
-        rehash(size_t(ilist.size()) + _num_filled);
+        rehash(static_cast<size_t>(ilist.size()) + _num_filled);
         for (auto it = ilist.begin(); it != ilist.end(); ++it)
             do_insert(*it);
     }
@@ -759,7 +761,7 @@ public:
         for (size_t i = 0; i < 256; i++) {
             if (off[i] != 0) {
                 total += off[i];
-                sums += (size_t)off[i] * (i + 1);
+                sums += static_cast<size_t>(off[i]) * (i + 1);
                 printf("\n%3d %8d %.5lf %3.3lf%%", i, off[i], 1.0 * off[i] / (_num_buckets / simd_bytes),
                        100.0 * total / (_num_buckets / simd_bytes));
             }
@@ -786,8 +788,8 @@ public:
         const auto pairs_size = (1 + bucket_to_slot(num_buckets)) * sizeof(PairT);
         const auto state_size = (simd_bytes + num_buckets) * sizeof(State);
 
-        auto* new_pairs = (decltype(_pairs))malloc(pairs_size);
-        auto* new_state = (decltype(_states))malloc(state_size);
+        auto* new_pairs = static_cast<decltype(_pairs)>(malloc(pairs_size));
+        auto* new_state = static_cast<decltype(_states)>(malloc(state_size));
 
         auto old_num_filled = _num_filled;
         auto old_states = _states;
@@ -829,14 +831,37 @@ private:
     // Can we fit another element?
     inline void check_expand_need() { reserve(_num_filled); }
 
-    inline static void prefetch_heap_block(char* ctrl) {
-        // Prefetch the heap-allocated memory region to resolve potential TLB
-        // misses.  This is intended to overlap with execution of calculating the hash for a key.
+    // Prefetch for read operations (find)
+    inline static void prefetch_read(char* ctrl) {
+#ifndef EMH_NO_READ_PREFETCH
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
         _mm_prefetch((const char*)ctrl, _MM_HINT_T0);
 #elif defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(static_cast<const void*>(ctrl));
 #endif
+#endif // EMH_NO_READ_PREFETCH
+    }
+
+    // Prefetch for write operations (insert/erase)
+    inline static void prefetch_write(char* ctrl) {
+#ifndef EMH_NO_WRITE_PREFETCH
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+        _mm_prefetch((const char*)ctrl, _MM_HINT_T0);
+#elif defined(__GNUC__) || defined(__clang__)
+        __builtin_prefetch(static_cast<const void*>(ctrl), 1, 1);
+#endif
+#endif // EMH_NO_WRITE_PREFETCH
+    }
+
+    // Legacy function for backward compatibility
+    inline static void prefetch_heap_block(char* ctrl) {
+#ifndef EMH_NO_PREFETCH
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+        _mm_prefetch((const char*)ctrl, _MM_HINT_T0);
+#elif defined(__GNUC__) || defined(__clang__)
+        __builtin_prefetch(static_cast<const void*>(ctrl));
+#endif
+#endif // EMH_NO_PREFETCH
     }
 
     inline bool group_has_empty(size_t bucket) const noexcept {
@@ -848,7 +873,7 @@ private:
         const auto offset = (uint8_t)_states[gbucket + group_index];
 #if EMH_SAFE_PSL
         if (EMH_UNLIKELY(offset > 128))
-            return (size_t)(offset - 127) * 128;
+            return static_cast<size_t>(offset - 127) * 128;
 #endif
         return offset;
     }
@@ -857,7 +882,7 @@ private:
 #if EMH_SAFE_PSL
         _states[gbucket + group_index] = group_offset <= 128 ? group_offset : 128 + group_offset / 128;
 #else
-        _states[gbucket + group_index] = (int8_t)group_offset;
+        _states[gbucket + group_index] = static_cast<int8_t>(group_offset);
 #endif
     }
 
@@ -887,10 +912,10 @@ private:
         auto next_bucket = main_bucket;
 
         while (true) {
-            const auto vec = LOAD_EPI8((decltype(&simd_empty))(&_states[next_bucket]));
-            auto maskf = (uint32_t)MOVEMASK_EPI8(CMPEQ_EPI8(vec, filled)) & group_bmask;
+            const auto vec = LOAD_EPI8(reinterpret_cast<decltype(&simd_empty)>(&_states[next_bucket]));
+            auto maskf = static_cast<uint32_t>(MOVEMASK_EPI8(CMPEQ_EPI8(vec, filled))) & group_bmask;
             if (maskf) {
-                prefetch_heap_block((char*)&_pairs[bucket_to_slot(next_bucket)]);
+                prefetch_read((char*)&_pairs[bucket_to_slot(next_bucket)]);
                 do {
                     const auto fbucket = next_bucket + CTZ(maskf);
                     const auto slot = bucket_to_slot(fbucket);
@@ -914,18 +939,18 @@ private:
         if (EMH_LIKELY(required_buckets >= _num_buckets))
             rehash(required_buckets + 2);
 
-        constexpr size_t chole = (size_t)-1;
+        constexpr size_t chole = static_cast<size_t>(-1);
         size_t main_bucket;
         size_t hole = chole, offset = 0u;
 
         const auto key_h2 = hash_key2(main_bucket, key);
-        prefetch_heap_block((char*)&_pairs[bucket_to_slot(main_bucket)]);
+        prefetch_write((char*)&_pairs[bucket_to_slot(main_bucket)]);
         const auto filled = SET1_EPI8(key_h2);
         auto next_bucket = main_bucket;
 
         do {
-            const auto vec = LOAD_EPI8((decltype(&simd_empty))(&_states[next_bucket]));
-            auto maskf = (uint32_t)MOVEMASK_EPI8(CMPEQ_EPI8(vec, filled)) & group_bmask;
+            const auto vec = LOAD_EPI8(reinterpret_cast<decltype(&simd_empty)>(&_states[next_bucket]));
+            auto maskf = static_cast<uint32_t>(MOVEMASK_EPI8(CMPEQ_EPI8(vec, filled))) & group_bmask;
 
             // 1. find filled
             while (maskf != 0) {
@@ -940,7 +965,7 @@ private:
 
             if (hole == chole) {
                 // 2. find empty/deleted
-                const auto maskd = (size_t)MOVEMASK_EPI8(CMPGT_EPI8(simd_filled, vec)) & group_bmask;
+                const auto maskd = static_cast<size_t>(MOVEMASK_EPI8(CMPGT_EPI8(simd_filled, vec))) & group_bmask;
                 if (group_has_empty(next_bucket)) {
                     hole = next_bucket + CTZ(maskd);
                     set_states(hole, key_h2);
@@ -958,20 +983,20 @@ private:
             return hole;
         }
 
-        const auto ebucket = find_empty_slot(main_bucket, next_bucket, (int)offset);
+        const auto ebucket = find_empty_slot(main_bucket, next_bucket, static_cast<int>(offset));
         set_states(ebucket, key_h2);
 
         return ebucket;
     }
 
     inline size_t empty_delete(size_t gbucket) const noexcept {
-        const auto vec = LOAD_EPI8((decltype(&simd_empty))(&_states[gbucket]));
-        return (size_t)MOVEMASK_EPI8(CMPGT_EPI8(simd_filled, vec));
+        const auto vec = LOAD_EPI8(reinterpret_cast<decltype(&simd_empty)>(&_states[gbucket]));
+        return static_cast<size_t>(MOVEMASK_EPI8(CMPGT_EPI8(simd_filled, vec)));
     }
 
     inline size_t filled_mask(size_t gbucket) const noexcept {
-        const auto vec = LOAD_EPI8((decltype(&simd_empty))(&_states[gbucket]));
-        return (size_t)MOVEMASK_EPI8(CMPGT_EPI8(vec, simd_delete)) & group_bmask;
+        const auto vec = LOAD_EPI8(reinterpret_cast<decltype(&simd_empty)>(&_states[gbucket]));
+        return static_cast<size_t>(MOVEMASK_EPI8(CMPGT_EPI8(vec, simd_delete))) & group_bmask;
     }
 
     // gbucket--->kbucket--->next_bucket|  kick_bucket--->next_bucket--->gbucket
@@ -980,11 +1005,11 @@ private:
             const auto maske = empty_delete(next_bucket) & group_bmask;
             if (maske != 0) {
                 const auto probe = CTZ(maske) + next_bucket;
-                prefetch_heap_block((char*)&_pairs[probe]);
+                prefetch_write((char*)&_pairs[probe]);
                 set_group_probe(gbucket, offset); // bugs for unique
                 return probe;
             }
-            next_bucket = get_next_bucket(next_bucket, (size_t)++offset);
+            next_bucket = get_next_bucket(next_bucket, static_cast<size_t>(++offset));
         }
 
         return 0;

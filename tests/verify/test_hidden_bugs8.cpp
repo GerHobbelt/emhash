@@ -100,7 +100,7 @@ int test_kickout_chain_integrity() {
     emhash8::HashMap<int, int, ControlledHash> m;
 
     // Pre-reserve to control table size
-    m.reserve(16);
+    (void)m.reserve(16);
 
     // Insert keys that will definitely collide and trigger kickout
     std::vector<int> keys;
@@ -127,7 +127,7 @@ int test_kickout_chain_integrity() {
 
     // Now erase some keys from middle of chains and verify integrity
     for (size_t i = keys.size() / 4; i < keys.size() / 2; i++) {
-        m.erase(keys[i]);
+        (void)m.erase(keys[i]);
     }
 
     // Verify remaining keys still accessible
@@ -181,7 +181,7 @@ int test_etail_staleness() {
     auto it = m.begin();
     int first_key = it->first;
     (void)first_key;
-    m.erase(it);
+    (void)m.erase(it);
 
     // Now the last element's bucket should be tracked
     // Insert more to trigger _etail usage
@@ -193,7 +193,7 @@ int test_etail_staleness() {
     // This is where _etail optimization kicks in
     auto last_it = m.last();
     int last_key = last_it->first;
-    m.erase(last_it);
+    (void)m.erase(last_it);
 
     // Verify the erased key is gone
     if (m.find(last_key) != m.end()) {
@@ -217,7 +217,7 @@ int test_etail_staleness() {
         for (auto it3 = m.begin(); it3 != m.end(); ++it3) {
             if (it3->first % 2 == 0) to_erase.push_back(it3->first);
         }
-        for (int k : to_erase) m.erase(k);
+        for (int k : to_erase) (void)m.erase(k);
 
         // Insert new
         for (int i = 200 + round * 10; i < 200 + round * 10 + 5; i++) {
@@ -309,7 +309,7 @@ int test_near_full_deadlock() {
     emhash8::HashMap<int, int, ConstHash> m;
 
     // Reserve small space and fill to near capacity
-    m.reserve(32);
+    (void)m.reserve(32);
 
     bool pass = true;
     auto start = std::chrono::steady_clock::now();
@@ -348,7 +348,7 @@ int test_pack_tail_safety() {
     printf("\n=== Test 6: EMH_PACK_TAIL memory safety ===\n");
 
     emhash8::HashMap<int, int> m;
-    m.reserve(64);
+    (void)m.reserve(64);
 
     for (int i = 0; i < 50; i++) {
         m.insert_unique(i, i);
